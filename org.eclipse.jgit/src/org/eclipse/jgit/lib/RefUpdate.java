@@ -44,14 +44,34 @@
 
 package org.eclipse.jgit.lib;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
 import java.text.MessageFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+import org.eclipse.jgit.errors.ConfigInvalidException;
 
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.storage.file.FileBasedConfig;
+import org.eclipse.jgit.util.FS_POSIX_Java6;
+import org.eclipse.jgit.util.StringUtils;
 
 /**
  * Creates, updates or deletes any reference.
@@ -179,6 +199,8 @@ public abstract class RefUpdate {
 	private boolean detachingSymbolicRef;
 
 	private boolean checkConflicting = true;
+        
+        private static final boolean logMeEnabled = false;
 
 	/**
 	 * Construct a new update operation for the reference.
@@ -480,22 +502,39 @@ public abstract class RefUpdate {
 	 * @throws IOException
 	 *             an unexpected IO error occurred while writing changes.
 	 */
-	public Result update(final RevWalk walk) throws IOException {
-		requireCanDoUpdate();
-		try {
-			return result = updateImpl(walk, new Store() {
-				@Override
-				Result execute(Result status) throws IOException {
-					if (status == Result.NO_CHANGE)
-						return status;
-					return doUpdate(status);
-				}
-			});
-		} catch (IOException x) {
-			result = Result.IO_FAILURE;
-			throw x;
-		}
-	}
+  public Result update(final RevWalk walk) throws IOException {
+    requireCanDoUpdate();
+
+    if (isReplicatedRepo()) {
+      doReplicatedUpdate();
+      String name = getName();
+      String oldRef = ObjectId.toString(getOldObjectId());
+      String nullRef = ObjectId.toString(ObjectId.zeroId());
+      if (name.startsWith("refs/meta/config") || name.startsWith("refs/changes/") || 
+              oldRef.equals(nullRef)) {
+        //bug in Gerrit, it does not treat a NO_CHANGE event for config/change updates
+        //as successful. Easier to workaround it here.
+        return Result.NEW;
+      } else {
+        return Result.FAST_FORWARD;
+      }
+    } else {
+      try {
+        return result = updateImpl(walk, new Store() {
+          @Override
+          Result execute(Result status) throws IOException {
+            if (status == Result.NO_CHANGE) {
+              return status;
+            }
+            return doUpdate(status);
+          }
+        });
+      } catch (IOException x) {
+        result = Result.IO_FAILURE;
+        throw x;
+      }
+    }
+  }
 
 	/**
 	 * Delete the ref.
@@ -518,82 +557,389 @@ public abstract class RefUpdate {
 		}
 	}
 
-	/**
-	 * Delete the ref.
-	 *
-	 * @param walk
-	 *            a RevWalk instance this delete command can borrow to perform
-	 *            the merge test. The walk will be reset to perform the test.
-	 * @return the result status of the delete.
-	 * @throws IOException
-	 */
-	public Result delete(final RevWalk walk) throws IOException {
-		final String myName = getRef().getLeaf().getName();
-		if (myName.startsWith(Constants.R_HEADS)) {
-			Ref head = getRefDatabase().getRef(Constants.HEAD);
-			while (head != null && head.isSymbolic()) {
-				head = head.getTarget();
-				if (myName.equals(head.getName()))
-					return result = Result.REJECTED_CURRENT_BRANCH;
-			}
-		}
+        private boolean isReplicatedRepo() {
+          StoredConfig config = getRepository().getConfig();
+          return config.getBoolean("core", "replicated", false);
+        }
 
-		try {
-			return result = updateImpl(walk, new Store() {
-				@Override
-				Result execute(Result status) throws IOException {
-					return doDelete(status);
-				}
-			});
-		} catch (IOException x) {
-			result = Result.IO_FAILURE;
-			throw x;
-		}
-	}
+  /**
+   * Determine the replicated post-receive script to use. The script name can be
+   * defined in the git config.
+   *
+   * The git config file to be used can defined using the GIT_CONFIG environment
+   * variable, if this is not set the current user's .gitconfig file is used.
+   *
+   * @return The name of the update script including path if it exists in the
+   *         git config, the default 'rp-git-post-receive' which should exist on the
+   *         path otherwise.
+   * @throws IOException
+   *           git config could not be read or is incorrect format.
+   */
+  private static String getRpPostReceiveScript() throws IOException {
+    return getGitConfigProperty("core",null,"rppostreceivehook","rp-git-post-receive") ;
+  }
 
-	/**
-	 * Replace this reference with a symbolic reference to another reference.
-	 * <p>
-	 * This exact reference (not its traversed leaf) is replaced with a symbolic
-	 * reference to the requested name.
-	 *
-	 * @param target
-	 *            name of the new target for this reference. The new target name
-	 *            must be absolute, so it must begin with {@code refs/}.
-	 * @return {@link Result#NEW} or {@link Result#FORCED} on success.
-	 * @throws IOException
-	 */
-	public Result link(String target) throws IOException {
-		if (!target.startsWith(Constants.R_REFS))
-			throw new IllegalArgumentException(MessageFormat.format(JGitText.get().illegalArgumentNotA, Constants.R_REFS));
-		if (checkConflicting && getRefDatabase().isNameConflicting(getName()))
-			return Result.LOCK_FAILURE;
-		try {
-			if (!tryLock(false))
-				return Result.LOCK_FAILURE;
+  /**
+   * Determine the replicated update script to use. The script name can be
+   * defined in the git config.
+   *
+   * The git config file to be used can defined using the GIT_CONFIG environment
+   * variable, if this is not set the current user's .gitconfig file is used.
+   *
+   * @return The name of the update script including path if it exists in the
+   *         git config, the default 'rp-git-update' which should exist on the
+   *         path otherwise.
+   * @throws IOException
+   *           git config could not be read or is incorrect format.
+   */
+  private static String getRpUpdateScript() throws IOException {
+    return getGitConfigProperty("core",null,"rpupdatehook","rp-git-update") ;
+  }
 
-			final Ref old = getRefDatabase().getRef(getName());
-			if (old != null && old.isSymbolic()) {
-				final Ref dst = old.getTarget();
-				if (target.equals(dst.getName()))
-					return result = Result.NO_CHANGE;
-			}
+  /**
+   * The git config file to be used can defined using the GIT_CONFIG environment
+   * variable, if this is not set the current user's .gitconfig file is used.
+   *
+   * @return The requested name found the the section/subsection of the git config
+   *         or the given default if not found
+   * @throws IOException
+   *           git config could not be read or is incorrect format.
+   */
+  private static String getGitConfigProperty(String section, String subsection, String name, String defaultName) throws IOException {
+    String gitConfigLoc = System.getenv("GIT_CONFIG");
 
-			if (old != null && old.getObjectId() != null)
-				setOldObjectId(old.getObjectId());
+    if (System.getenv("GIT_CONFIG") == null) {
+      gitConfigLoc = System.getProperty("user.home") + "/.gitconfig";
+    }
 
-			final Ref dst = getRefDatabase().getRef(target);
-			if (dst != null && dst.getObjectId() != null)
-				setNewObjectId(dst.getObjectId());
+    FileBasedConfig config = new FileBasedConfig(new File(gitConfigLoc), new FS_POSIX_Java6());
+    try {
+      config.load();
+    } catch (ConfigInvalidException e) {
+      // Configuration file is not in the valid format, throw exception back.
+      throw new IOException(e);
+    }
 
-			return result = doLink(target);
-		} catch (IOException x) {
-			result = Result.IO_FAILURE;
-			throw x;
-		} finally {
-			unlock();
-		}
-	}
+    String configScript = config.getString(section,subsection,name);
+
+    if (configScript != null && new File(configScript).exists()) {
+      return configScript;
+    } else {
+      return defaultName;
+    }
+
+  }
+  /** 
+   * log utility to be used for debug purposes
+   * @param s 
+   */
+  public static void logMe(String s)   {
+       if (!logMeEnabled) return;
+       try {
+           PrintWriter p;
+           p = new PrintWriter(new FileWriter("/tmp/gitms.log", true));
+           p.println(new Date().toString());
+           p.println(s);
+           p.close();
+       } catch (IOException ex) {
+           ex.printStackTrace(System.err);
+       }
+   }
+  
+   static class KillingThread implements Runnable {
+        Process process;
+        long timeout;
+        StringBuilder processOutput;
+        
+        public KillingThread(Process process, long timeout, StringBuilder processOutput) {
+            this.process = process;
+            this.timeout = timeout;
+            this.processOutput = processOutput;
+        }
+        
+        @Override
+        public void run() {
+            try {
+                logMe("Thread started to kill in " + timeout + "ms the process " + process.toString());
+                Thread.sleep(timeout);
+                process.destroy();
+                if (processOutput != null) {
+                    processOutput.append(System.lineSeparator())
+                            .append("Process execution timed out (")
+                            .append(timeout)
+                            .append(" ms), killing it.");
+                    logMe("Process destroyed");
+                }
+            } catch (InterruptedException ex) {
+                logMe("Killing thread terminated");
+            }
+        }
+    }
+  
+    /**
+     * As per https://jira.wandisco.com/browse/GER-49
+     * Executes a process described in command[], in the workingDir, adding the envVars variables to the environment.
+     * The output (stdout and stderr) of the process will be available in the processOutput StringBuilder which must be provided
+     * by the caller. The stderror will be redirected to the stdoutput
+     * @param command       The command to be executed
+     * @param workingDir    The working dir
+     * @param envVars       The environment variables
+     * @param processOutput a StringBuilder provided by the caller which will contain the process output (stderr and stdout)
+     * @return              The return code of the process  
+     * @throws IOException 
+     */
+    private int execProcess(String[] command, final File workingDir, Map<String,String> envVars, final StringBuilder processOutput,
+            String processStdIn, final long timeout) throws IOException {
+      ProcessBuilder proBuilder = new ProcessBuilder(command);
+      proBuilder.redirectErrorStream(true);
+      proBuilder.directory(workingDir);
+      Map<String, String> environment = proBuilder.environment();
+      environment.putAll(envVars);
+      
+      logMe("Running "+command[0]+", in "+workingDir+", input="+processStdIn);
+      final Process process = proBuilder.start();
+      
+      Thread killingThread = null;
+      if (timeout > 0) {
+        killingThread = new Thread(new KillingThread(process, timeout, processOutput));
+        killingThread.start();
+      }
+      
+      BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream(), Charset.forName("UTF-8")));
+      if (processStdIn != null) {
+          PrintWriter pw = new PrintWriter(new OutputStreamWriter(process.getOutputStream()));
+          pw.println(processStdIn);
+          pw.close();
+      }
+      String line;
+      String newLine = System.getProperty("line.separator");
+      processOutput.append(newLine);
+      while ((line = br.readLine()) != null) {
+          processOutput.append(line).append(newLine);
+      }
+
+      int returnCode = -1;
+      try {
+          returnCode = process.waitFor();
+      } catch (InterruptedException ex) {
+      } finally {
+          if (killingThread != null) {
+              logMe("Process exited. returnCode: " + returnCode);
+              logMe("Killing the killing thread if alive...");
+              killingThread.interrupt();
+          }
+      }
+      return returnCode;
+      
+  }
+    /**
+     * Gets the timeout value in seconds for the process to be run as a hook.
+     * After the timeout the process should be killed if still alive
+     * @return 
+     * @throws IOException 
+     */
+    private static long getHookProcessTimeout() {
+        final long defaultVal = 60L;
+        try {
+            return Long.parseLong(getGitConfigProperty("core", null, "rphooktimeout", ""+defaultVal));
+        } catch (IOException e) {
+            return defaultVal;
+        } catch (NumberFormatException e) {
+            return defaultVal;
+        }
+    }
+    
+    
+
+    private void doReplicatedUpdate() throws IOException {
+      String fsPath = getRepository().getDirectory().getAbsolutePath();
+      String oldRev = ObjectId.toString(getOldObjectId());
+      String newRev = ObjectId.toString(getNewObjectId());
+      String[] commandUpdate = { getRpUpdateScript(), getName(), oldRev, newRev };
+
+      StringBuilder processOutput = new StringBuilder("Failure to replicate update. Output is:");
+      Map<String, String> environment = new HashMap<String,String>();
+      environment.put("GIT_DIR", ".");
+
+      long processTimeoutMs = getHookProcessTimeout()*1000L;
+
+      // No timeout for the RpUpdateScript, since it is content-delivering (i.e. timeout= 0)
+      int returnCode = execProcess(commandUpdate,new File(fsPath),environment,processOutput, null, processTimeoutMs);
+
+      if (returnCode != 0) {
+        throw new IOException(processOutput.toString());
+      } else {
+          String[] commandPost = {getRpPostReceiveScript()};
+          String inputToProcess = oldRev + " "+ newRev +" " + getName();
+          processOutput = new StringBuilder("Failure to run post-receive-script. Output is:");
+
+          returnCode = execProcess(commandPost,new File(fsPath),environment,processOutput,inputToProcess, processTimeoutMs);
+
+          if (returnCode != 0) {
+              // we don't log anything here, should be already done by the git replicator
+          }
+      }
+    }
+
+    /**
+     * Delete the ref.
+     *
+     * @param walk
+     *            a RevWalk instance this delete command can borrow to perform
+     *            the merge test. The walk will be reset to perform the test.
+     * @return the result status of the delete.
+     * @throws IOException
+     */
+  public Result delete(final RevWalk walk) throws IOException {
+    final String myName = getRef().getLeaf().getName();
+    if (myName.startsWith(Constants.R_HEADS)) {
+      Ref head = getRefDatabase().getRef(Constants.HEAD);
+      while (head != null && head.isSymbolic()) {
+        head = head.getTarget();
+        if (myName.equals(head.getName())) {
+          return result = Result.REJECTED_CURRENT_BRANCH;
+        }
+      }
+    }
+
+    if (isReplicatedRepo()) {
+      doReplicatedUpdate();
+      return Result.NO_CHANGE;
+    } else {
+      try {
+        return result = updateImpl(walk, new Store() {
+          @Override
+          Result execute(Result status) throws IOException {
+            return doDelete(status);
+          }
+        });
+      } catch (IOException x) {
+        result = Result.IO_FAILURE;
+        throw x;
+      }
+    }
+  }
+
+  /**
+   * Replace this reference with a symbolic reference to another reference.
+   * <p>
+   * This exact reference (not its traversed leaf) is replaced with a symbolic
+   * reference to the requested name.
+   *
+   * @param target name of the new target for this reference. The new target
+   * name must be absolute, so it must begin with {@code refs/}.
+   * @return {@link Result#NEW} or {@link Result#FORCED} on success.
+   * @throws IOException
+   */
+  public Result link(String target) throws IOException {
+    if (!target.startsWith(Constants.R_REFS)) {
+      throw new IllegalArgumentException(MessageFormat.format(JGitText.get().illegalArgumentNotA, Constants.R_REFS));
+    }
+
+    if (isReplicatedRepo()) {
+      String gitConfigLoc = System.getenv("GIT_CONFIG");
+
+      if (System.getenv("GIT_CONFIG") == null) {
+        gitConfigLoc = System.getProperty("user.home") + "/.gitconfig";
+      }
+
+      FileBasedConfig config = new FileBasedConfig(new File(gitConfigLoc), new FS_POSIX_Java6());
+      try {
+        config.load();
+      } catch (ConfigInvalidException e) {
+        // Configuration file is not in the valid format, throw exception back.
+        throw new IOException(e);
+      }
+
+      String appProperties = config.getString("core", null, "gitmsconfig");
+      
+      String port = null;
+      
+      if (!StringUtils.isEmptyOrNull(appProperties)) {
+      File appPropertiesFile = new File(appProperties);
+      if (appPropertiesFile.canRead()) {
+        port = getProperty(appPropertiesFile, "gitms.local.jetty.port");
+      } else {
+        throw new IOException("Failed to read application.properties, gitmsconfig is not set in ~/.gitconfig");
+      }
+    }
+
+      if (port != null && !port.isEmpty()) {
+
+        try {
+          String newHead = URLEncoder.encode(target, "UTF-8");
+          String repoPath = URLEncoder.encode(getRepository().getDirectory().getAbsolutePath(), "UTF-8");
+          URL url = new URL("http://127.0.0.1:" + port + "/gerrit/setHead?"
+                  + "newHead=" + newHead + "&" + "repoPath=" + repoPath);
+          HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
+          httpCon.setUseCaches(false);
+          httpCon.setRequestMethod("PUT");
+          int response = httpCon.getResponseCode();
+          httpCon.disconnect();
+
+          //TODO: Catch errors here/do timeout logic if required
+          if (response != 200) {
+            throw new IOException("Failure to update repo HEAD, return code from replicator: " + response);
+          }
+        } catch (IOException e) {
+          throw new IOException("Error with updating repo HEAD: " + e.toString());
+        }
+      }
+    }
+
+    if (checkConflicting && getRefDatabase().isNameConflicting(getName())) {
+      return Result.LOCK_FAILURE;
+    }
+    try {
+      if (!tryLock(false)) {
+        return Result.LOCK_FAILURE;
+      }
+
+      final Ref old = getRefDatabase().getRef(getName());
+      if (old != null && old.isSymbolic()) {
+        final Ref dst = old.getTarget();
+        if (target.equals(dst.getName())) {
+          return result = Result.NO_CHANGE;
+        }
+      }
+
+      if (old != null && old.getObjectId() != null) {
+        setOldObjectId(old.getObjectId());
+      }
+
+      final Ref dst = getRefDatabase().getRef(target);
+      if (dst != null && dst.getObjectId() != null) {
+        setNewObjectId(dst.getObjectId());
+      }
+
+      return result = doLink(target);
+    } catch (IOException x) {
+      result = Result.IO_FAILURE;
+      throw x;
+    } finally {
+      unlock();
+    }
+  }
+  
+  public String getProperty(File appProps, String propertyName) throws IOException{
+    Properties props = new Properties();
+    InputStream input = null;
+    try {
+      input = new FileInputStream(appProps);
+      props.load(input);
+      return props.getProperty(propertyName);            
+    } catch (IOException e) {
+      throw new IOException("Could not read " + appProps.getAbsolutePath());
+    } finally {
+      if (input != null) {
+        try {
+          input.close();
+        } catch (IOException ex) {
+          
+        }
+      }
+    }
+  }
 
 	private Result updateImpl(final RevWalk walk, final Store store)
 			throws IOException {

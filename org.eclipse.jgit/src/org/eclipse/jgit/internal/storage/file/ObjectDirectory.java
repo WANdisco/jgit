@@ -409,8 +409,9 @@ public class ObjectDirectory extends FileObjectDatabase {
 				for (PackFile p : pList.packs) {
 					try {
 						ObjectLoader ldr = p.get(curs, objectId);
-						if (ldr != null)
+						if (ldr != null) {
 							return ldr;
+                                                }
 					} catch (PackMismatchException e) {
 						// Pack was modified; refresh the entire pack list.
 						if (searchPacksAgain(pList))
@@ -606,7 +607,8 @@ public class ObjectDirectory extends FileObjectDatabase {
 	}
 
 	private boolean searchPacksAgain(PackList old) {
-		return old.snapshot.isModified(packDirectory) && old != scanPacks(old);
+            return old != scanPacks(old);
+            //return old.snapshot.isModified(packDirectory) && old != scanPacks(old);
 	}
 
 	Config getConfig() {
