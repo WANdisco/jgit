@@ -84,6 +84,9 @@ public class BatchRefUpdate {
 
 	/** Should the result value be appended to {@link #refLogMessage}. */
 	private boolean refLogIncludeResult;
+        
+        /** Should the update be replicated. */
+        private boolean replicated = true;
 
 	/**
 	 * Initialize a new batch update.
@@ -136,6 +139,16 @@ public class BatchRefUpdate {
 	 */
 	public BatchRefUpdate setRefLogIdent(final PersonIdent pi) {
 		refLogIdent = pi;
+		return this;
+	}
+        
+        /**
+         * Set if the BatchRefUpdate operations should be replicated.
+         * @param replicated
+         * @return {@code this}
+         */
+        public BatchRefUpdate setReplicated(final boolean replicated) {
+		this.replicated = replicated;
 		return this;
 	}
 
@@ -275,7 +288,12 @@ public class BatchRefUpdate {
 					case DELETE:
 						RefUpdate rud = newUpdate(cmd);
 						monitor.update(1);
-						cmd.setResult(rud.delete(walk));
+                                                if (replicated) {
+                                                  cmd.setResult(rud.delete(walk));
+                                                } else {
+                                                  cmd.setResult(rud.unreplicatedDelete(walk));
+                                                }
+						
 					}
 				}
 			} catch (IOException err) {
@@ -304,7 +322,12 @@ public class BatchRefUpdate {
 						case UPDATE:
 						case UPDATE_NONFASTFORWARD:
 							RefUpdate ruu = newUpdate(cmd);
-							cmd.setResult(ruu.update(walk));
+                                                        if (replicated) {
+                                                          cmd.setResult(ruu.update(walk));
+                                                        } else {
+                                                          cmd.setResult(ruu.unreplicatedUpdate(walk));
+                                                        }
+							
 							break;
 						case CREATE:
 							for (String prefix : getPrefixes(cmd.getRefName())) {
@@ -320,7 +343,11 @@ public class BatchRefUpdate {
 							ru.setCheckConflicting(false);
 							addRefToPrefixes(takenPrefixes, cmd.getRefName());
 							takenNames.add(cmd.getRefName());
-							cmd.setResult(ru.update(walk));
+                                                        if (replicated) {
+                                                          cmd.setResult(ru.update(walk));
+                                                        } else {
+                                                          cmd.setResult(ru.unreplicatedUpdate(walk));
+                                                        }
 						}
 					}
 				} catch (IOException err) {

@@ -417,8 +417,9 @@ public class ObjectDirectory extends FileObjectDatabase {
 				for (PackFile p : pList.packs) {
 					try {
 						ObjectLoader ldr = p.get(curs, objectId);
-						if (ldr != null)
+						if (ldr != null) {
 							return ldr;
+                                                }
 					} catch (PackMismatchException e) {
 						// Pack was modified; refresh the entire pack list.
 						if (searchPacksAgain(pList))
@@ -642,18 +643,27 @@ public class ObjectDirectory extends FileObjectDatabase {
 	}
 
 	private boolean searchPacksAgain(PackList old) {
-		// Whether to trust the pack folder's modification time. If set
-		// to false we will always scan the .git/objects/pack folder to
-		// check for new pack files. If set to true (default) we use the
-		// lastmodified attribute of the folder and assume that no new
-		// pack files can be in this folder if his modification time has
-		// not changed.
+		/**
+                 * It looks like the JGit project ran into a similar issue as we
+                 * did here. The lastmodified time of the packfile does not appear
+                 * to be entirely reliable. Commenting this out here for reference
+                 * instead of replacing our version, as we would always just set
+                 * this property to false anyway.
+                 * 
+                 * Whether to trust the pack folder's modification time. If set
+		 * to false we will always scan the .git/objects/pack folder to
+		 * check for new pack files. If set to true (default) we use the
+		 * lastmodified attribute of the folder and assume that no new
+		 * pack files can be in this folder if his modification time has
+		 * not changed.
 		boolean trustFolderStat = config.getBoolean(
 				ConfigConstants.CONFIG_CORE_SECTION,
 				ConfigConstants.CONFIG_KEY_TRUSTFOLDERSTAT, true);
 
 		return ((!trustFolderStat) || old.snapshot.isModified(packDirectory))
-				&& old != scanPacks(old);
+				&& old != scanPacks(old); 
+                */
+            return old != scanPacks(old);
 	}
 
 	Config getConfig() {

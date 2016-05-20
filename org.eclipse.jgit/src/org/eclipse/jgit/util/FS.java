@@ -54,6 +54,8 @@ import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.text.MessageFormat;
@@ -248,7 +250,7 @@ public abstract class FS {
 	 * @since 3.0
 	 */
 	public long lastModified(File f) throws IOException {
-		return f.lastModified();
+		return Files.getLastModifiedTime(Paths.get(f.getAbsolutePath())).toMillis();
 	}
 
 	/**
@@ -1157,7 +1159,12 @@ public abstract class FS {
 		boolean exists = isDirectory || isFile;
 		boolean canExecute = exists && !isDirectory && canExecute(path);
 		boolean isSymlink = false;
-		long lastModified = exists ? path.lastModified() : 0L;
+		long lastModified;
+                try {
+                  lastModified = exists ? Files.getLastModifiedTime(Paths.get(path.getAbsolutePath())).toMillis() : 0L;
+                } catch (IOException ex) {
+                  lastModified = 0;
+                }
 		long createTime = 0L;
 		return new Attributes(this, path, exists, isDirectory, canExecute,
 				isSymlink, isFile, createTime, lastModified, -1);

@@ -180,6 +180,11 @@ public abstract class Repository implements AutoCloseable {
 	 *             in case of IO problem
 	 */
 	public abstract void create(boolean bare) throws IOException;
+        
+        public void unreplicatedCreate(boolean bare) throws IOException {
+          throw new UnsupportedOperationException("Unreplicated creation not "
+                  + "supported for Repositories of type: " + this.getClass());
+        }
 
 	/** @return local metadata directory; null if repository isn't local. */
 	public File getDirectory() {

@@ -46,12 +46,20 @@
 
 package org.eclipse.jgit.internal.storage.file;
 
+import java.io.BufferedReader;
 import static org.eclipse.jgit.lib.RefDatabase.ALL;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.HashSet;
+import java.util.Properties;
 import java.util.Set;
 
 import org.eclipse.jgit.errors.ConfigInvalidException;
@@ -251,6 +259,124 @@ public class FileRepository extends Repository {
 			throw e2;
 		}
 	}
+        
+        
+        public String getProperty(File appProps, String propertyName) throws IOException{
+          Properties props = new Properties();
+          InputStream input = null;
+          try {
+            input = new FileInputStream(appProps);
+            props.load(input);
+            return props.getProperty(propertyName);
+          } catch (IOException e) {
+            throw new IOException("Could not read " + appProps.getAbsolutePath());
+          } finally {
+            if (input != null) {
+              try {
+                input.close();
+              } catch (IOException ex) {
+
+              }
+            }
+          }
+        }
+        
+  @Override
+  public void unreplicatedCreate(boolean bare) throws IOException {
+    final FileBasedConfig cfg = getConfig();
+    if (cfg.getFile().exists()) {
+      throw new IllegalStateException(MessageFormat.format(
+              JGitText.get().repositoryAlreadyExists, getDirectory()));
+    }
+    FileUtils.mkdirs(getDirectory(), true);
+    HideDotFiles hideDotFiles = getConfig().getEnum(
+            ConfigConstants.CONFIG_CORE_SECTION, null,
+            ConfigConstants.CONFIG_KEY_HIDEDOTFILES,
+            HideDotFiles.DOTGITONLY);
+    if (hideDotFiles != HideDotFiles.FALSE && !isBare()
+            && getDirectory().getName().startsWith(".")) //$NON-NLS-1$
+    {
+      getFS().setHidden(getDirectory(), true);
+    }
+    refs.create();
+    objectDatabase.create();
+
+    FileUtils.mkdir(new File(getDirectory(), "branches")); //$NON-NLS-1$
+    FileUtils.mkdir(new File(getDirectory(), "hooks")); //$NON-NLS-1$
+
+    RefUpdate head = updateRef(Constants.HEAD);
+    head.disableRefLog();
+    head.link(Constants.R_HEADS + Constants.MASTER);
+
+    final boolean fileMode;
+    if (getFS().supportsExecute()) {
+      File tmp = File.createTempFile("try", "execute", getDirectory()); //$NON-NLS-1$ //$NON-NLS-2$
+
+      getFS().setExecute(tmp, true);
+      final boolean on = getFS().canExecute(tmp);
+
+      getFS().setExecute(tmp, false);
+      final boolean off = getFS().canExecute(tmp);
+      FileUtils.delete(tmp);
+
+      fileMode = on && !off;
+    } else {
+      fileMode = false;
+    }
+
+    SymLinks symLinks = SymLinks.FALSE;
+    if (getFS().supportsSymlinks()) {
+      File tmp = new File(getDirectory(), "tmplink"); //$NON-NLS-1$
+      try {
+        getFS().createSymLink(tmp, "target"); //$NON-NLS-1$
+        symLinks = null;
+        FileUtils.delete(tmp);
+      } catch (IOException e) {
+        // Normally a java.nio.file.FileSystemException
+      }
+    }
+    if (symLinks != null) {
+      cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
+              ConfigConstants.CONFIG_KEY_SYMLINKS, symLinks.name()
+              .toLowerCase());
+    }
+    cfg.setInt(ConfigConstants.CONFIG_CORE_SECTION, null,
+            ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
+    cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+            ConfigConstants.CONFIG_KEY_FILEMODE, fileMode);
+    if (bare) {
+      cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+              ConfigConstants.CONFIG_KEY_BARE, true);
+    }
+    cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+            ConfigConstants.CONFIG_KEY_LOGALLREFUPDATES, !bare);
+    if (SystemReader.getInstance().isMacOS()) // Java has no other way
+    {
+      cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+              ConfigConstants.CONFIG_KEY_PRECOMPOSEUNICODE, true);
+    }
+    if (!bare) {
+      File workTree = getWorkTree();
+      if (!getDirectory().getParentFile().equals(workTree)) {
+        cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
+                ConfigConstants.CONFIG_KEY_WORKTREE, getWorkTree()
+                .getAbsolutePath());
+        LockFile dotGitLockFile = new LockFile(new File(workTree,
+                Constants.DOT_GIT), getFS());
+        try {
+          if (dotGitLockFile.lock()) {
+            dotGitLockFile.write(Constants.encode(Constants.GITDIR
+                    + getDirectory().getAbsolutePath()));
+            dotGitLockFile.commit();
+          }
+        } finally {
+          dotGitLockFile.unlock();
+        }
+      }
+    }
+    cfg.save();
+  }
+
 
 	/**
 	 * Create a new Git repository initializing the necessary files and
@@ -263,93 +389,89 @@ public class FileRepository extends Repository {
 	 *             in case of IO problem
 	 */
 	public void create(boolean bare) throws IOException {
-		final FileBasedConfig cfg = getConfig();
-		if (cfg.getFile().exists()) {
-			throw new IllegalStateException(MessageFormat.format(
-					JGitText.get().repositoryAlreadyExists, getDirectory()));
-		}
-		FileUtils.mkdirs(getDirectory(), true);
-		HideDotFiles hideDotFiles = getConfig().getEnum(
-				ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_HIDEDOTFILES,
-				HideDotFiles.DOTGITONLY);
-		if (hideDotFiles != HideDotFiles.FALSE && !isBare()
-				&& getDirectory().getName().startsWith(".")) //$NON-NLS-1$
-			getFS().setHidden(getDirectory(), true);
-		refs.create();
-		objectDatabase.create();
+          
+                String gitConfigLoc = System.getenv("GIT_CONFIG");
+ 
+                if (System.getenv("GIT_CONFIG") == null) {
+                  gitConfigLoc = System.getProperty("user.home") + "/.gitconfig";
+                }
 
-		FileUtils.mkdir(new File(getDirectory(), "branches")); //$NON-NLS-1$
-		FileUtils.mkdir(new File(getDirectory(), "hooks")); //$NON-NLS-1$
+                FileBasedConfig config = new FileBasedConfig(new File(gitConfigLoc), FS.DETECTED);
+                try {
+                  config.load();
+                } catch (ConfigInvalidException e) {
+                  // Configuration file is not in the valid format, throw exception back.
+                  throw new IOException(e);
+                }
 
-		RefUpdate head = updateRef(Constants.HEAD);
-		head.disableRefLog();
-		head.link(Constants.R_HEADS + Constants.MASTER);
+                String port = null;
+                String timeout = null;
+                String repoPath = null;
+                String appProperties = config.getString("core", null, "gitmsconfig");
 
-		final boolean fileMode;
-		if (getFS().supportsExecute()) {
-			File tmp = File.createTempFile("try", "execute", getDirectory()); //$NON-NLS-1$ //$NON-NLS-2$
 
-			getFS().setExecute(tmp, true);
-			final boolean on = getFS().canExecute(tmp);
+                if (!StringUtils.isEmptyOrNull(appProperties)) {
+                  File appPropertiesFile = new File(appProperties);
+                  if (appPropertiesFile.canRead()) {
+                    port = getProperty(appPropertiesFile, "gitms.local.jetty.port");
+                    timeout = getProperty(appPropertiesFile, "gitms.repo.deploy.timeout");
+                    if (timeout == null || timeout.isEmpty()) {
+                      timeout = "60";
+                    }
+                  }  
+                } 
+                
+                if (port != null && !port.isEmpty()) {
+      
+                  BufferedReader reader = null;
 
-			getFS().setExecute(tmp, false);
-			final boolean off = getFS().canExecute(tmp);
-			FileUtils.delete(tmp);
+                  try {
+                    repoPath = URLEncoder.encode(getDirectory().getAbsolutePath(), "UTF-8");
+                    URL url = new URL("http://127.0.0.1:" + port + "/gerrit/deploy?"
+                            + "timeout=" + timeout + "&repoPath=" + repoPath);
+                    HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
+                    httpCon.setDoOutput(true);
+                    httpCon.setUseCaches(false);
+                    httpCon.setRequestMethod("PUT");
+                    httpCon.setRequestProperty("Content-Type", "application/xml");
+                    httpCon.setRequestProperty("Accept", "application/xml");
+                    int response = httpCon.getResponseCode();
 
-			fileMode = on && !off;
-		} else {
-			fileMode = false;
-		}
+                    //an error may have happened, and if it did, the errorstream will be available
+                    //to get more details - but if repo deployment was successful, getErrorStream
+                    //will be null
+                    StringBuilder responseString = new StringBuilder();
+                    if (httpCon.getErrorStream() != null) {
+                      reader = new BufferedReader(new InputStreamReader(httpCon.getErrorStream()));
 
-		SymLinks symLinks = SymLinks.FALSE;
-		if (getFS().supportsSymlinks()) {
-			File tmp = new File(getDirectory(), "tmplink"); //$NON-NLS-1$
-			try {
-				getFS().createSymLink(tmp, "target"); //$NON-NLS-1$
-				symLinks = null;
-				FileUtils.delete(tmp);
-			} catch (IOException e) {
-				// Normally a java.nio.file.FileSystemException
-			}
-		}
-		if (symLinks != null)
-			cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
-					ConfigConstants.CONFIG_KEY_SYMLINKS, symLinks.name()
-							.toLowerCase());
-		cfg.setInt(ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
-		cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_FILEMODE, fileMode);
-		if (bare)
-			cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-					ConfigConstants.CONFIG_KEY_BARE, true);
-		cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_LOGALLREFUPDATES, !bare);
-		if (SystemReader.getInstance().isMacOS())
-			// Java has no other way
-			cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-					ConfigConstants.CONFIG_KEY_PRECOMPOSEUNICODE, true);
-		if (!bare) {
-			File workTree = getWorkTree();
-			if (!getDirectory().getParentFile().equals(workTree)) {
-				cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
-						ConfigConstants.CONFIG_KEY_WORKTREE, getWorkTree()
-								.getAbsolutePath());
-				LockFile dotGitLockFile = new LockFile(new File(workTree,
-						Constants.DOT_GIT), getFS());
-				try {
-					if (dotGitLockFile.lock()) {
-						dotGitLockFile.write(Constants.encode(Constants.GITDIR
-								+ getDirectory().getAbsolutePath()));
-						dotGitLockFile.commit();
-					}
-				} finally {
-					dotGitLockFile.unlock();
-				}
-			}
-		}
-		cfg.save();
+                      String line;
+                      while ((line = reader.readLine()) != null) {
+                        responseString.append(line);
+                        responseString.append("\n");
+                      }
+                      reader.close();
+                    }
+
+                    httpCon.disconnect();
+
+                    if (response != 200) {
+                      //there has been a problem with the deployment
+                      throw new IOException("Failure to create the git repository on the GitMS Replicator, response code: " + response
+                              + "Replicator response: " + responseString.toString());
+                    }
+                    
+                  } catch (IOException e) {
+                    throw new IOException("Error with deploying repo: " + e.toString());
+                  } finally {        
+                    if (reader != null) {
+                      reader.close();
+                    }
+                  }
+                } else {
+                  //unreplicated deployment fall through due to insufficient settings
+                  //TODO: Make this report a log message
+                  unreplicatedCreate(bare);
+                }
 	}
 
 	/**

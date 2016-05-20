@@ -58,6 +58,7 @@
 
   <artifactId>org.eclipse.jgit</artifactId>
   <name>JGit - Core</name>
+  <version>4.0.1.201506240215-r_WDv6</version>
 
   <description>
     Repository access and algorithms
