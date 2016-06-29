@@ -491,6 +491,20 @@ public abstract class RefUpdate {
        }
    }
 
+  /**
+   * Get the old ref ID that should be used for passing to the replication engine.
+   *
+   * Where the expected (client) is available, we should use the it over the old rev as it is Git MS and not Gerrit MS that gets the lock
+   * on the git repo in the replicated scenario. This allows us to avoid overwriting commits in a repo which could have been updated
+   * already from another node.
+   *
+   * @return ObjectId that should be used for passing to the replication engine.
+   */
+  private ObjectId getReplicationOldObjectId() {
+    ObjectId clientOldObjectId = getExpectedOldObjectId();
+    return (clientOldObjectId != null) ? clientOldObjectId : getOldObjectId();
+  }
+
    /**
     * Gracefully update the ref to the new value.
     * <p>
@@ -508,8 +522,10 @@ public abstract class RefUpdate {
 
     if (isReplicatedRepo()) {
       doReplicatedUpdate();
+      ObjectId replicateOldObjID = getReplicationOldObjectId();
+
       String name = getName();
-      String oldRef = ObjectId.toString(getOldObjectId());
+      String oldRef = ObjectId.toString(replicateOldObjID);
       String nullRef = ObjectId.toString(ObjectId.zeroId());
       if (name.startsWith("refs/meta/config") || name.startsWith("refs/changes/") || 
               oldRef.equals(nullRef)) {
@@ -518,7 +534,7 @@ public abstract class RefUpdate {
         return Result.NEW;
       } else {        
         RevObject newObj = safeParse(walk, newValue);
-        RevObject oldObj = safeParse(walk, oldValue);
+        RevObject oldObj = safeParse(walk, replicateOldObjID);
         if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
           return Result.FAST_FORWARD;
         } else {
@@ -709,7 +725,7 @@ public abstract class RefUpdate {
       String user = username.get();
       setUsername(null);
       String fsPath = getRepository().getDirectory().getAbsolutePath();
-      String oldRev = ObjectId.toString(getOldObjectId());
+      String oldRev = ObjectId.toString(getReplicationOldObjectId());
       String newRev = ObjectId.toString(getNewObjectId());
       String[] commandUpdate = { getRpUpdateScript(), getName(), oldRev, newRev};
 
