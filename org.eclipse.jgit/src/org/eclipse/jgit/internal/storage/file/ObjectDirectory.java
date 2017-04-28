@@ -422,7 +422,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 						p.resetTransientErrorCount();
 						if (ldr != null)
 							return ldr;
-                                                }
 					} catch (PackMismatchException e) {
 						// Pack was modified; refresh the entire pack list.
 						if (searchPacksAgain(pList))
