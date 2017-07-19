@@ -47,6 +47,7 @@
 package org.eclipse.jgit.internal.storage.file;
 
 import java.io.BufferedReader;
+
 import static org.eclipse.jgit.lib.RefDatabase.ALL;
 
 import java.io.File;
@@ -66,6 +67,7 @@ import java.util.Set;
 import org.eclipse.jgit.attributes.AttributesNode;
 import org.eclipse.jgit.attributes.AttributesNodeProvider;
 import org.eclipse.jgit.errors.ConfigInvalidException;
+import org.eclipse.jgit.errors.RepositoryAlreadyExistsException;
 import org.eclipse.jgit.events.ConfigChangedEvent;
 import org.eclipse.jgit.events.ConfigChangedListener;
 import org.eclipse.jgit.events.IndexChangedEvent;
@@ -276,7 +278,12 @@ public class FileRepository extends Repository {
 		}
 	}
 
-
+        /**
+         * @param appProps
+         * @param propertyName
+         * @return property
+         * @throws IOException
+         */
         public String getProperty(File appProps, String propertyName) throws IOException{
           Properties props = new Properties();
           InputStream input = null;
@@ -291,7 +298,7 @@ public class FileRepository extends Repository {
               try {
                 input.close();
               } catch (IOException ex) {
-
+                // NO-OP
               }
             }
           }
@@ -394,17 +401,17 @@ public class FileRepository extends Repository {
   }
 
 
-	/**
-	 * Create a new Git repository initializing the necessary files and
-	 * directories.
-	 *
-	 * @param bare
-	 *            if true, a bare repository is created.
-	 *
-	 * @throws IOException
-	 *             in case of IO problem
-	 */
-	public void create(boolean bare) throws IOException {
+        /**
+         * Create a new Git repository initializing the necessary files and
+         * directories.
+         *
+         * @param bare
+         *            if true, a bare repository is created.
+         *
+         * @throws IOException
+         *             in case of IO problem
+         */
+        public void create(boolean bare) throws IOException {
 
                 String gitConfigLoc = System.getenv("GIT_CONFIG");
 
@@ -470,14 +477,24 @@ public class FileRepository extends Repository {
 
                     httpCon.disconnect();
 
+                    if (response == 412) {
+                      // there has been a problem with the deployment
+                      throw new RepositoryAlreadyExistsException(
+                        "Failure to create the git repository on the GitMS Replicator, response code: "
+                          + response + "Replicator response: "
+                          + responseString.toString());
+                    }
+
                     if (response != 200) {
                       //there has been a problem with the deployment
                       throw new IOException("Failure to create the git repository on the GitMS Replicator, response code: " + response
                               + "Replicator response: " + responseString.toString());
                     }
 
-                  } catch (IOException e) {
-                    throw new IOException("Error with deploying repo: " + e.toString());
+                  } catch (RepositoryAlreadyExistsException ex) {
+                    throw ex;
+                  } catch (IOException ex) {
+                    throw new IOException("Error with deploying repo: " + ex.toString());
                   } finally {
                     if (reader != null) {
                       reader.close();
