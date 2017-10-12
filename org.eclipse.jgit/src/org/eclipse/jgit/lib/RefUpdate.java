@@ -564,10 +564,12 @@ public abstract class RefUpdate {
       } else {
         RevObject newObj = safeParse(walk, newValue);
         RevObject oldObj = safeParse(walk, replicateOldObjID);
-        if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
-          return Result.FAST_FORWARD;
-        } else {
-          return Result.FORCED;
+        if (newObj instanceof RevCommit && oldObj instanceof RevCommit) {
+          if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
+            return Result.FAST_FORWARD;
+          } else {
+            return Result.FORCED;
+          }
         }
       }
     } else {
