@@ -571,6 +571,7 @@ public abstract class RefUpdate {
             return Result.FORCED;
           }
         }
+        return Result.REJECTED;
       }
     } else {
       return unreplicatedUpdate(walk);
