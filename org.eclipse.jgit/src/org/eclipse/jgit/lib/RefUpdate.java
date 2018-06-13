@@ -44,6 +44,17 @@
 
 package org.eclipse.jgit.lib;
 
+import org.eclipse.jgit.errors.ConfigInvalidException;
+import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevObject;
+import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.storage.file.FileBasedConfig;
+import org.eclipse.jgit.transport.PushCertificate;
+import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.util.StringUtils;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -58,22 +69,10 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.text.MessageFormat;
-
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
-import org.eclipse.jgit.errors.ConfigInvalidException;
-import org.eclipse.jgit.errors.MissingObjectException;
-import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.revwalk.RevObject;
-
-import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.storage.file.FileBasedConfig;
-import org.eclipse.jgit.util.FS;
-import org.eclipse.jgit.util.StringUtils;
-import org.eclipse.jgit.transport.PushCertificate;
 
 /**
  * Creates, updates or deletes any reference.
@@ -784,8 +783,10 @@ public abstract class RefUpdate {
     }
 
   private boolean canDelete() throws IOException {
-    final String myName = getRef().getLeaf().getName();
-    if (myName.startsWith(Constants.R_HEADS)) {
+	  final String myName = detachingSymbolicRef
+			  ? getRef().getName()
+			  : getRef().getLeaf().getName();
+    if (myName.startsWith(Constants.R_HEADS)  && !getRepository().isBare()) {
       Ref head = getRefDatabase().getRef(Constants.HEAD);
       while (head != null && head.isSymbolic()) {
         head = head.getTarget();

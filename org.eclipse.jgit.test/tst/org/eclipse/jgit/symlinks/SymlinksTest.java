@@ -37,11 +37,6 @@
  */
 package org.eclipse.jgit.symlinks;
 
-import static org.junit.Assert.assertEquals;
-
-import java.io.File;
-import java.util.List;
-
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.junit.RepositoryTestCase;
@@ -55,6 +50,11 @@ import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.FileUtils;
 import org.junit.Before;
 import org.junit.Test;
+
+import java.io.File;
+import java.util.List;
+
+import static org.junit.Assert.assertEquals;
 
 public class SymlinksTest extends RepositoryTestCase {
 	@Before

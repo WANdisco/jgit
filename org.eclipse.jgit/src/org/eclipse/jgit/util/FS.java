@@ -43,6 +43,16 @@
 
 package org.eclipse.jgit.util;
 
+import org.eclipse.jgit.annotations.Nullable;
+import org.eclipse.jgit.api.errors.JGitInternalException;
+import org.eclipse.jgit.errors.CommandFailedException;
+import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.util.ProcessResult.Status;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -53,7 +63,7 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.LinkOption;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.text.MessageFormat;
@@ -67,16 +77,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-
-import org.eclipse.jgit.annotations.Nullable;
-import org.eclipse.jgit.api.errors.JGitInternalException;
-import org.eclipse.jgit.errors.CommandFailedException;
-import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.util.ProcessResult.Status;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /** Abstraction to support various file system operations not in Java. */
 public abstract class FS {
@@ -298,7 +298,7 @@ public abstract class FS {
 	 * @since 3.0
 	 */
 	public long lastModified(File f) throws IOException {
-		return Files.getLastModifiedTime(Paths.get(f.getAbsolutePath())).toMillis();
+		return Files.getLastModifiedTime(f.toPath(), LinkOption.NOFOLLOW_LINKS).toMillis();
 	}
 
 	/**
@@ -1298,12 +1298,11 @@ public abstract class FS {
 		boolean exists = isDirectory || isFile;
 		boolean canExecute = exists && !isDirectory && canExecute(path);
 		boolean isSymlink = false;
-		long lastModified;
-    try {
-      lastModified = exists ? Files.getLastModifiedTime(Paths.get(path.getAbsolutePath())).toMillis() : 0L;
-    } catch (IOException ex) {
-      lastModified = 0;
-    }
+		long lastModified = 0;
+		try {
+			lastModified = exists ? Files.getLastModifiedTime(path.toPath(), LinkOption.NOFOLLOW_LINKS).toMillis() : 0L;
+		} catch (IOException e) { lastModified = 0L;
+		}
 		long createTime = 0L;
 		return new Attributes(this, path, exists, isDirectory, canExecute,
 				isSymlink, isFile, createTime, lastModified, -1);
