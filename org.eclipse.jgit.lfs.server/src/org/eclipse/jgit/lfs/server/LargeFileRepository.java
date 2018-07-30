@@ -82,8 +82,21 @@ public interface LargeFileRepository {
 	 * @param id
 	 *            id of the object
 	 * @return length of the object content in bytes, -1 if the object doesn't
-	 *         exist
+	 *         exist, or hasn't been replicated yet for this replication group.
 	 * @throws IOException
 	 */
 	public long getSize(AnyLongObjectId id) throws IOException;
+
+        // Replicated Repositories have additional information present to indicate 
+        // what replica group they are in.
+        public void setReplicationInfo( final ReplicationInfo replicationInfo );
+        
+	public String getProjectName();
+        // Replication Group Identifier
+        public String getReplicaGroupIdentifier();
+        // Replica = true
+        public boolean isReplica();
+        // IsReplication indicates that the item is on disk, and also has been 
+        // replicated to other nodes in the same replication group as our identifier.
+        public boolean isReplicated(AnyLongObjectId id);       
 }

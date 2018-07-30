@@ -57,65 +57,78 @@ import org.eclipse.jgit.lfs.server.internal.LfsServerText;
 
 /**
  * Output stream writing content to a {@link LockFile} which is committed on
- * close(). The stream checks if the hash of the stream content matches the
- * id.
+ * close(). The stream checks if the hash of the stream content matches the id.
  */
-class AtomicObjectOutputStream extends OutputStream {
+public class AtomicObjectOutputStream extends OutputStream {
 
-	private LockFile locked;
+    private LockFile locked;
 
-	private DigestOutputStream out;
+    private DigestOutputStream out;
 
-	private boolean aborted;
+    private boolean aborted;
 
-	private AnyLongObjectId id;
+    private AnyLongObjectId id;
 
-	AtomicObjectOutputStream(Path path, AnyLongObjectId id)
-			throws IOException {
-		locked = new LockFile(path.toFile());
-		locked.lock();
-		this.id = id;
-		out = new DigestOutputStream(locked.getOutputStream(),
-				Constants.newMessageDigest());
-	}
+    AtomicObjectOutputStream(Path path, AnyLongObjectId id)
+            throws IOException {
+        locked = new LockFile(path.toFile());
+        locked.lock();
+        this.id = id;
+        out = new DigestOutputStream(locked.getOutputStream(),
+                Constants.newMessageDigest());
+    }
 
-	@Override
-	public void write(int b) throws IOException {
-		out.write(b);
-	}
+    AtomicObjectOutputStream(Path path)
+            throws IOException {
+        locked = new LockFile(path.toFile());
+        locked.lock();
+        out = new DigestOutputStream(locked.getOutputStream(),
+                Constants.newMessageDigest());
+    }
 
-	@Override
-	public void write(byte[] b) throws IOException {
-		out.write(b);
-	}
+    @Override
+    public void write(int b) throws IOException {
+        out.write(b);
+    }
 
-	@Override
-	public void write(byte[] b, int off, int len) throws IOException {
-		out.write(b, off, len);
-	}
+    @Override
+    public void write(byte[] b) throws IOException {
+        out.write(b);
+    }
 
-	@Override
-	public void close() throws IOException {
-		out.close();
-		if (!aborted) {
-			verifyHash();
-			locked.commit();
-		}
-	}
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+        out.write(b, off, len);
+    }
 
-	private void verifyHash() {
-		AnyLongObjectId contentHash = LongObjectId
-				.fromRaw(out.getMessageDigest().digest());
-		if (!contentHash.equals(id)) {
-			abort();
-			throw new CorruptLongObjectException(id, contentHash,
-					MessageFormat.format(LfsServerText.get().corruptLongObject,
-							contentHash, id));
-		}
-	}
+    @Override
+    public void close() throws IOException {
+        out.close();
+        if (!aborted) {
+            verifyHash();
+            locked.commit();
+        }
+    }
 
-	void abort() {
-		locked.unlock();
-		aborted = true;
-	}
+    private void verifyHash() {
+        // easy way to not use verify hash is to use the constructor without
+        // the id field.  If not set we can't verify its hash.
+        if (id == null) {
+            return;
+        }
+
+        AnyLongObjectId contentHash = LongObjectId
+                .fromRaw(out.getMessageDigest().digest());
+        if (!contentHash.equals(id)) {
+            abort();
+            throw new CorruptLongObjectException(id, contentHash,
+                    MessageFormat.format(LfsServerText.get().corruptLongObject,
+                            contentHash, id));
+        }
+    }
+
+    void abort() {
+        locked.unlock();
+        aborted = true;
+    }
 }

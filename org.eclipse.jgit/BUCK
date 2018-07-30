@@ -12,7 +12,8 @@ java_library(
     '//lib:servlet-api',
     '//lib:slf4j-api',
   ],
-  visibility = ['PUBLIC'],
+  visibility = [
+		'//org.eclipse.jgit.lfs.server:jgit-lfs-server','PUBLIC'],
 )
 
 java_sources(

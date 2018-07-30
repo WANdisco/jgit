@@ -93,6 +93,17 @@
       <groupId>com.google.code.gson</groupId>
       <artifactId>gson</artifactId>
     </dependency>
+    
+    <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+    really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+    scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project. -->
+    <dependency>
+      <groupId>com.wandisco.gerrit.gitms.shared</groupId>
+      <artifactId>gerrit.gitms.shared</artifactId>
+      <version>1.0.2-TC1</version>
+      <type>jar</type>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 
   <build>

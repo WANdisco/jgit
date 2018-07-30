@@ -228,7 +228,8 @@ class LfsStore extends TextBuiltin {
 		switch (storeType) {
 		case FS:
 			Path dir = Paths.get(directory);
-			FileLfsRepository fsRepo = new FileLfsRepository(
+                        // TODO LFS support for command line? 
+                        FileLfsRepository fsRepo = new FileLfsRepository(
 					getStoreUrl(baseURI), dir);
 			FileLfsServlet content = new FileLfsServlet(fsRepo, 30000);
 			app.addServlet(new ServletHolder(content), STORE_PATH);

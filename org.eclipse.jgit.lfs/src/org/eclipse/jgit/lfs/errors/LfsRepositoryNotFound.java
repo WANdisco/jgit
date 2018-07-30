@@ -40,7 +40,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
 package org.eclipse.jgit.lfs.errors;
 
 import java.text.MessageFormat;
@@ -53,14 +52,21 @@ import org.eclipse.jgit.lfs.internal.LfsText;
  * @since 4.5
  */
 public class LfsRepositoryNotFound extends LfsException {
-	private static final long serialVersionUID = 1L;
 
-	/**
-	 * @param name
-	 *            the repository name.
-	 *
-	 */
-	public LfsRepositoryNotFound(String name) {
-		super(MessageFormat.format(LfsText.get().repositoryNotFound, name));
-	}
+    private static final long serialVersionUID = 1L;
+
+    /**
+     * @param name the repository name.
+     *
+     */
+    public LfsRepositoryNotFound(String name) {
+        super(MessageFormat.format(LfsText.get().repositoryNotFound, name));
+    }
+
+    public LfsRepositoryNotFound(Exception e)
+    {
+        // assuming someone has raised a general exception and wishes to convey it as
+        // a repo not found just copy across the message they generated.
+        super(e.getMessage());
+    }
 }

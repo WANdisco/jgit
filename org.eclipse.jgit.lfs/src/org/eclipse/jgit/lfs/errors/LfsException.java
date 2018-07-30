@@ -40,7 +40,6 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
 package org.eclipse.jgit.lfs.errors;
 
 /**
@@ -49,13 +48,13 @@ package org.eclipse.jgit.lfs.errors;
  * @since 4.5
  */
 public class LfsException extends Exception {
-	private static final long serialVersionUID = 1L;
 
-	/**
-	 * @param message
-	 *            error message, which may be shown to an end-user.
-	 */
-	public LfsException(String message) {
-		super(message);
-	}
+    private static final long serialVersionUID = 1L;
+
+    /**
+     * @param message error message, which may be shown to an end-user.
+     */
+    public LfsException(String message) {
+        super(message);
+    }
 }

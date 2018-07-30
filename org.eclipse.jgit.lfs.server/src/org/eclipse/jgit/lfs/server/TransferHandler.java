@@ -140,7 +140,7 @@ abstract class TransferHandler {
 			info.size = o.size;
 
 			LongObjectId oid = LongObjectId.fromString(o.oid);
-			if (repository.getSize(oid) >= 0) {
+			if (repository.getSize( oid) >= 0) {
 				info.actions = new HashMap<>();
 				info.actions.put(DOWNLOAD,
 						repository.getDownloadAction(oid));
