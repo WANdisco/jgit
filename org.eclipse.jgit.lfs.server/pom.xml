@@ -98,9 +98,9 @@
     really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
     scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project. -->
     <dependency>
-      <groupId>com.wandisco.gerrit.gitms.shared</groupId>
-      <artifactId>gerrit.gitms.shared</artifactId>
-      <version>1.0.2-TC1</version>
+      <groupId>com.wandisco</groupId>
+      <artifactId>gerrit-gitms-interface</artifactId>
+      <version>1.0.2-TC5</version>
       <type>jar</type>
       <scope>provided</scope>
     </dependency>
