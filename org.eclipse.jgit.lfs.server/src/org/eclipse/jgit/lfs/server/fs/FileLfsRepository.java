@@ -215,7 +215,7 @@ public class FileLfsRepository implements LargeFileRepository {
             updateRepositoryReplicationInformation(objectInfo);
 
         } catch (Exception ex) {
-            logger.error("Error has been thrown from remote LFS Rest api. Details: ", ex);
+            logger.error("Error has been thrown from remote LFS Rest api. Details: {}", ex);
             // we can't decide if its cached or not as its thrown, maybe timeout or interrupt?
             // If we return false, worst that will happen is that the client will reupload the content
             // and we will throw it away when it comes to store it as we already have it.
@@ -229,8 +229,7 @@ public class FileLfsRepository implements LargeFileRepository {
                 (objectInfo.objectInfo != null) && 
                 !Strings.isNullOrEmpty(objectInfo.objectInfo.oid));
         
-        logger.info("LFS Remote server indicated item replicated status: %s", 
-                Boolean.toString(isReplicated));
+        logger.info("LFS Remote server indicated item replicated status: {}", Boolean.toString(isReplicated));
 
         return isReplicated;
 
@@ -275,7 +274,7 @@ public class FileLfsRepository implements LargeFileRepository {
             lfsCache = GitLfsCacheAccessor.getOrCreateGitLFSCache(getReplicaGroupIdentifier());
 
         } catch (InterruptedException ex) {
-            logger.error("LFS isReplicated check was interrupted, possible timeout or shutdown?.", ex);
+            logger.error("LFS isReplicated check was interrupted, possible timeout or shutdown?. {}", ex);
 
             // return false to indicate we havne't got it cached as we can't make a decision about it otherwise.
             // this is safe as it will only force client to re-upload the content at which point we will see its 
