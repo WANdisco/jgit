@@ -170,6 +170,12 @@ public class S3Repository implements LargeFileRepository {
         return null;
     }
 
+    @Override
+    public String getProjectIdentity() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    
     /**
      * Cache metadata (size) for an object to avoid extra roundtrip to S3 in
      * order to retrieve this metadata for a given object. Subclasses can

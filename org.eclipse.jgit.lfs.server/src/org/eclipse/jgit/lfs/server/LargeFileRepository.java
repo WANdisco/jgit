@@ -91,7 +91,10 @@ public interface LargeFileRepository {
         // what replica group they are in.
         public void setReplicationInfo( final ReplicationInfo replicationInfo );
         
+        // Replication projectName
 	public String getProjectName();
+        // Replication project identity
+        public String getProjectIdentity();
         // Replication Group Identifier
         public String getReplicaGroupIdentifier();
         // Replica = true

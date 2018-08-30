@@ -248,7 +248,7 @@ public class FileLfsRepository implements LargeFileRepository {
             replicationInfo.replicationGroupIdentifier = objectInfo.replicationGroupInfo.id;
         }
         
-        // update our repo id if posible
+        // update our repo id if possible
         if ((objectInfo.repositoryInfo != null) && (objectInfo.repositoryInfo.id != null)) {
             replicationInfo.repositoryId = objectInfo.repositoryInfo.id;
         }
@@ -335,6 +335,14 @@ public class FileLfsRepository implements LargeFileRepository {
             return null;
         }
         return replicationInfo.repositoryName;
+    }
+    
+    @Override
+    public String getProjectIdentity() {
+        if (!isReplica()) {
+            return null;
+        }
+        return replicationInfo.repositoryId;
     }
 
     /**
