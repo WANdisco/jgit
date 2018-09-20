@@ -42,6 +42,18 @@
    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
    ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -->
+<!--
+Copyright (c) 2018 Contributors to the Eclipse Foundation
+
+  See the NOTICE file(s) distributed with this work for additional
+  information regarding copyright ownership.
+
+  This program and the accompanying materials are made available under the
+  terms of the Eclipse Public License 2.0 which is available at
+  http://www.eclipse.org/legal/epl-2.0
+
+  SPDX-License-Identifier: EPL-2.0
+-->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -51,8 +63,7 @@
   <groupId>org.eclipse.jgit</groupId>
   <artifactId>org.eclipse.jgit-parent</artifactId>
   <packaging>pom</packaging>
-  <version>4.5.2.201704071617-r_WDv4_TC6</version>
-
+  <version>4.5.2.201704071617-r_WDv4_RC1</version>
   <name>JGit - Parent</name>
   <url>${jgit-url}</url>
 
@@ -185,7 +196,6 @@
     <jgit-url>http://www.eclipse.org/jgit/</jgit-url>
     <jgit-copyright>Copyright (c) 2005, 2009 Shawn Pearce, Robin Rosenberg, et.al.</jgit-copyright>
     <jgit.website.url>scp://build.eclipse.org/home/data/httpd/download.eclipse.org/jgit/site/${project.version}/</jgit.website.url>
-
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <maven.build.timestamp.format>yyyyMMddHHmm</maven.build.timestamp.format>
@@ -221,6 +231,11 @@
     <repository>
       <id>jgit-repository</id>
       <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
+    </repository>
+    <repository>
+      <id>central</id>
+      <name>WANdisco - central virtual repository</name>
+      <url>http://artifacts.wandisco.com:8081/artifactory/central/</url>
     </repository>
   </repositories>
 
@@ -412,6 +427,66 @@
     <plugins>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jasig.maven</groupId>
+        <artifactId>maven-notice-plugin</artifactId>
+        <version>1.1.0</version>
+        <inherited>false</inherited>
+        <configuration>
+          <noticeTemplate>${basedir}/NOTICE.template</noticeTemplate>
+          <licenseMapping>
+            <param>${basedir}/license-mappings.xml</param>
+          </licenseMapping>
+        </configuration>
+        <executions>
+        <execution>
+          <goals>
+            <goal>generate</goal>
+          </goals>
+          <phase>validate</phase>
+        </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <version>1.14</version>
+        <configuration>
+          <licensesConfigFile>${basedir}/licenses/licenses.xml</licensesConfigFile>
+          <includeTransitiveDependencies>false</includeTransitiveDependencies>
+          <!--<licenseResolver>file://localhost${project.basedir}/licenses</licenseResolver>-->
+          <missingFile>${basedir}/licenses/THIRD-PARTY.properties</missingFile>
+          <useMissingFile>true</useMissingFile>
+          <useRepositoryMissingFiles>false</useRepositoryMissingFiles>
+          <excludedScopes>test</excludedScopes>
+          <excludes>
+            <exclude>LICENSE</exclude>
+            <exclude>**/licenses/**</exclude>
+            <exclude>docs/**</exclude>
+            <exclude>**/resources/**/*.txt</exclude>
+            <exclude>**/target/**</exclude>
+          </excludes>
+          <!-- turn to TRUE to enforce strict Open Source Licensing compliance.Build fails when licensing info missing -->
+          <failIfWarning>false</failIfWarning>
+          <inceptionYear>2014</inceptionYear>
+          <licenseName>wandisco</licenseName>
+          <outputDirectory>${basedir}</outputDirectory>
+          <roots>
+            <intem>src/main</intem>
+          </roots>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>download-licenses</goal>
+              <goal>add-third-party</goal>
+            </goals>
+            <phase>process-sources</phase>
+          </execution>
+        </executions>
       </plugin>
 
       <plugin>
