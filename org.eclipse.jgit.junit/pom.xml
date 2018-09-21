@@ -64,7 +64,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>4.5.2.201704071617-r_WDv4_RC1</version>
+    <version>4.5.2.201704071617-r_WDv4</version>
   </parent>
 
   <artifactId>org.eclipse.jgit.junit</artifactId>
