@@ -1,0 +1,6 @@
+
+Lists of 4 third-party dependencies.
+     (Unknown license) args4j (args4j:args4j:2.0.15 - http://args4j.dev.java.net/args4j/)
+     (Eclipse Public License 1.0) JUnit (junit:junit:4.12 - http://junit.org)
+     (Eclipse Distribution License (New BSD License)) JGit - JUnit Utility Classes (org.eclipse.jgit:org.eclipse.jgit.junit:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit.junit)
+     (Eclipse Distribution License (New BSD License)) JGit - Command Line Interface (org.eclipse.jgit:org.eclipse.jgit.pgm:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit.pgm)
