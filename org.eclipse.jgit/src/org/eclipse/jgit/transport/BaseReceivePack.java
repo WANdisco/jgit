@@ -55,6 +55,7 @@
 
 package org.eclipse.jgit.transport;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.eclipse.jgit.transport.GitProtocolConstants.CAPABILITY_ATOMIC;
 import static org.eclipse.jgit.transport.GitProtocolConstants.CAPABILITY_DELETE_REFS;
 import static org.eclipse.jgit.transport.GitProtocolConstants.CAPABILITY_OFS_DELTA;
@@ -87,19 +88,9 @@ import org.eclipse.jgit.errors.PackProtocolException;
 import org.eclipse.jgit.errors.TooLargePackException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.PackLock;
-import org.eclipse.jgit.lib.BatchRefUpdate;
-import org.eclipse.jgit.lib.Config;
+import org.eclipse.jgit.internal.submodule.SubmoduleValidator;
+import org.eclipse.jgit.lib.*;
 import org.eclipse.jgit.lib.Config.SectionParser;
-import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.NullProgressMonitor;
-import org.eclipse.jgit.lib.ObjectChecker;
-import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.ObjectIdSubclassMap;
-import org.eclipse.jgit.lib.ObjectInserter;
-import org.eclipse.jgit.lib.PersonIdent;
-import org.eclipse.jgit.lib.ProgressMonitor;
-import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.ObjectWalk;
 import org.eclipse.jgit.revwalk.RevBlob;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -1055,8 +1046,10 @@ public abstract class BaseReceivePack {
 	 */
 	protected void receivePackAndCheckConnectivity() throws IOException {
 		receivePack();
-		if (needCheckConnectivity())
+		if (needCheckConnectivity()) {
 			checkConnectivity();
+			checkSubmodules();
+		}
 		parser = null;
 	}
 
@@ -1411,6 +1404,20 @@ public abstract class BaseReceivePack {
 						throw new MissingObjectException(o, o.getType());
 				}
 			}
+		}
+	}
+
+	private void checkSubmodules()
+			throws IOException {
+		ObjectDatabase odb = db.getObjectDatabase();
+		if (objectChecker == null) {
+			return;
+		}
+		for (GitmoduleEntry entry : objectChecker.getGitsubmodules()) {
+			AnyObjectId blobId = entry.getBlobId();
+			ObjectLoader blob = odb.open(blobId, Constants.OBJ_BLOB);
+			SubmoduleValidator.assertValidGitModulesFile(
+					new String(blob.getBytes(), UTF_8));
 		}
 	}
 

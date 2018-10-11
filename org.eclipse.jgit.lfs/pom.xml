@@ -141,7 +141,6 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>clirr-maven-plugin</artifactId>
-        <version>${clirr-version}</version>
         <configuration>
           <comparisonVersion>${jgit-last-release-version}</comparisonVersion>
           <minSeverity>info</minSeverity>
