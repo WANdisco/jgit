@@ -233,7 +233,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
             <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
         </repository>
         <repository>
-            <id>central</id>
+            <id>wd_central</id>
             <name>WANDisco - central repository</name>
             <url>http://artifacts.wandisco.com:8081/artifactory/central/</url>
         </repository>
