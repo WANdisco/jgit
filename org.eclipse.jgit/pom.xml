@@ -53,7 +53,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>4.5.5.201812240535-r</version>
+    <version>4.5.5.201812240535-r_WDv1</version>
   </parent>
 
   <artifactId>org.eclipse.jgit</artifactId>
@@ -211,8 +211,8 @@
     <pluginManagement>
       <plugins>
         <plugin>
-          <groupId>com.github.spotbugs</groupId>
-          <artifactId>spotbugs-maven-plugin</artifactId>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>findbugs-maven-plugin</artifactId>
           <configuration>
             <excludeFilterFile>findBugs/FindBugsExcludeFilter.xml</excludeFilterFile>
           </configuration>

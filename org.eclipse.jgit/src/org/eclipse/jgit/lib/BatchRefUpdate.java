@@ -41,6 +41,18 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.lib;
 
@@ -85,6 +97,9 @@ public class BatchRefUpdate {
 
 	/** Should the result value be appended to {@link #refLogMessage}. */
 	private boolean refLogIncludeResult;
+        
+        /** Should the update be replicated. */
+        private boolean replicated = true;
 
 	/** Push certificate associated with this update. */
 	private PushCertificate pushCert;
@@ -147,6 +162,16 @@ public class BatchRefUpdate {
 	 */
 	public BatchRefUpdate setRefLogIdent(final PersonIdent pi) {
 		refLogIdent = pi;
+		return this;
+	}
+        
+        /**
+         * Set if the BatchRefUpdate operations should be replicated.
+         * @param replicated
+         * @return {@code this}
+         */
+        public BatchRefUpdate setReplicated(final boolean replicated) {
+		this.replicated = replicated;
 		return this;
 	}
 
@@ -373,7 +398,12 @@ public class BatchRefUpdate {
 					case DELETE:
 						RefUpdate rud = newUpdate(cmd);
 						monitor.update(1);
-						cmd.setResult(rud.delete(walk));
+                                                if (replicated) {
+                                                  cmd.setResult(rud.delete(walk));
+                                                } else {
+                                                  cmd.setResult(rud.unreplicatedDelete(walk));
+                                                }
+						
 					}
 				}
 			} catch (IOException err) {
@@ -402,7 +432,12 @@ public class BatchRefUpdate {
 						case UPDATE:
 						case UPDATE_NONFASTFORWARD:
 							RefUpdate ruu = newUpdate(cmd);
-							cmd.setResult(ruu.update(walk));
+                                                        if (replicated) {
+                                                          cmd.setResult(ruu.update(walk));
+                                                        } else {
+                                                          cmd.setResult(ruu.unreplicatedUpdate(walk));
+                                                        }
+							
 							break;
 						case CREATE:
 							for (String prefix : getPrefixes(cmd.getRefName())) {
@@ -418,7 +453,11 @@ public class BatchRefUpdate {
 							ru.setCheckConflicting(false);
 							addRefToPrefixes(takenPrefixes, cmd.getRefName());
 							takenNames.add(cmd.getRefName());
-							cmd.setResult(ru.update(walk));
+                                                        if (replicated) {
+                                                          cmd.setResult(ru.update(walk));
+                                                        } else {
+                                                          cmd.setResult(ru.unreplicatedUpdate(walk));
+                                                        }
 						}
 					}
 				} catch (IOException err) {

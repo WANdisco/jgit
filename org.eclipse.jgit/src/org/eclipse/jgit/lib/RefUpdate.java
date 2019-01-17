@@ -41,106 +41,138 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.lib;
 
-import java.io.IOException;
-import java.text.MessageFormat;
-
+import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.transport.PushCertificate;
+import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.util.StringUtils;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.text.MessageFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 
 /**
  * Creates, updates or deletes any reference.
  */
 public abstract class RefUpdate {
-	/** Status of an update request. */
-	public static enum Result {
-		/** The ref update/delete has not been attempted by the caller. */
-		NOT_ATTEMPTED,
+  /** Status of an update request. */
+  public static enum Result {
+   /** The ref update/delete has not been attempted by the caller. */
+   NOT_ATTEMPTED,
 
-		/**
-		 * The ref could not be locked for update/delete.
-		 * <p>
-		 * This is generally a transient failure and is usually caused by
-		 * another process trying to access the ref at the same time as this
-		 * process was trying to update it. It is possible a future operation
-		 * will be successful.
-		 */
-		LOCK_FAILURE,
+   /**
+    * The ref could not be locked for update/delete.
+    * <p>
+    * This is generally a transient failure and is usually caused by
+    * another process trying to access the ref at the same time as this
+    * process was trying to update it. It is possible a future operation
+    * will be successful.
+    */
+   LOCK_FAILURE,
 
-		/**
-		 * Same value already stored.
-		 * <p>
-		 * Both the old value and the new value are identical. No change was
-		 * necessary for an update. For delete the branch is removed.
-		 */
-		NO_CHANGE,
+   /**
+    * Same value already stored.
+    * <p>
+    * Both the old value and the new value are identical. No change was
+    * necessary for an update. For delete the branch is removed.
+    */
+   NO_CHANGE,
 
-		/**
-		 * The ref was created locally for an update, but ignored for delete.
-		 * <p>
-		 * The ref did not exist when the update started, but it was created
-		 * successfully with the new value.
-		 */
-		NEW,
+    /**
+     * The ref was created locally for an update, but ignored for delete.
+     * <p>
+     * The ref did not exist when the update started, but it was created
+     * successfully with the new value.
+     */
+    NEW,
 
-		/**
-		 * The ref had to be forcefully updated/deleted.
-		 * <p>
-		 * The ref already existed but its old value was not fully merged into
-		 * the new value. The configuration permitted a forced update to take
-		 * place, so ref now contains the new value. History associated with the
-		 * objects not merged may no longer be reachable.
-		 */
-		FORCED,
+    /**
+     * The ref had to be forcefully updated/deleted.
+     * <p>
+     * The ref already existed but its old value was not fully merged into
+     * the new value. The configuration permitted a forced update to take
+     * place, so ref now contains the new value. History associated with the
+     * objects not merged may no longer be reachable.
+     */
+    FORCED,
 
-		/**
-		 * The ref was updated/deleted in a fast-forward way.
-		 * <p>
-		 * The tracking ref already existed and its old value was fully merged
-		 * into the new value. No history was made unreachable.
-		 */
-		FAST_FORWARD,
+    /**
+     * The ref was updated/deleted in a fast-forward way.
+     * <p>
+     * The tracking ref already existed and its old value was fully merged
+     * into the new value. No history was made unreachable.
+     */
+    FAST_FORWARD,
 
-		/**
-		 * Not a fast-forward and not stored.
-		 * <p>
-		 * The tracking ref already existed but its old value was not fully
-		 * merged into the new value. The configuration did not allow a forced
-		 * update/delete to take place, so ref still contains the old value. No
-		 * previous history was lost.
-		 */
-		REJECTED,
+    /**
+     * Not a fast-forward and not stored.
+     * <p>
+     * The tracking ref already existed but its old value was not fully
+     * merged into the new value. The configuration did not allow a forced
+     * update/delete to take place, so ref still contains the old value. No
+     * previous history was lost.
+     */
+    REJECTED,
 
-		/**
-		 * Rejected because trying to delete the current branch.
-		 * <p>
-		 * Has no meaning for update.
-		 */
-		REJECTED_CURRENT_BRANCH,
+    /**
+     * Rejected because trying to delete the current branch.
+     * <p>
+     * Has no meaning for update.
+     */
+    REJECTED_CURRENT_BRANCH,
 
-		/**
-		 * The ref was probably not updated/deleted because of I/O error.
-		 * <p>
-		 * Unexpected I/O error occurred when writing new ref. Such error may
-		 * result in uncertain state, but most probably ref was not updated.
-		 * <p>
-		 * This kind of error doesn't include {@link #LOCK_FAILURE}, which is a
-		 * different case.
-		 */
-		IO_FAILURE,
+    /**
+     * The ref was probably not updated/deleted because of I/O error.
+     * <p>
+     * Unexpected I/O error occurred when writing new ref. Such error may
+     * result in uncertain state, but most probably ref was not updated.
+     * <p>
+     * This kind of error doesn't include {@link #LOCK_FAILURE}, which is a
+     * different case.
+     */
+    IO_FAILURE,
 
-		/**
-		 * The ref was renamed from another name
-		 * <p>
-		 */
-		RENAMED
-	}
+    /**
+     * The ref was renamed from another name
+     * <p>
+     */
+    RENAMED
+  }
 
 	/** New value the caller wants this ref to have. */
 	private ObjectId newValue;
@@ -184,20 +216,22 @@ public abstract class RefUpdate {
 
 	private boolean checkConflicting = true;
 
-	/**
-	 * Construct a new update operation for the reference.
-	 * <p>
-	 * {@code ref.getObjectId()} will be used to seed {@link #getOldObjectId()},
-	 * which callers can use as part of their own update logic.
-	 *
-	 * @param ref
-	 *            the reference that will be updated by this operation.
-	 */
-	protected RefUpdate(final Ref ref) {
-		this.ref = ref;
-		oldValue = ref.getObjectId();
-		refLogMessage = ""; //$NON-NLS-1$
-	}
+  private static final boolean logMeEnabled = false;
+
+  /**
+   * Construct a new update operation for the reference.
+   * <p>
+   * {@code ref.getObjectId()} will be used to seed {@link #getOldObjectId()},
+   * which callers can use as part of their own update logic.
+   *
+   * @param ref
+   *            the reference that will be updated by this operation.
+   */
+  protected RefUpdate(final Ref ref) {
+     this.ref = ref;
+     oldValue = ref.getObjectId();
+     refLogMessage = ""; //$NON-NLS-1$
+  }
 
 	/** @return the reference database this update modifies. */
 	protected abstract RefDatabase getRefDatabase();
@@ -473,55 +507,106 @@ public abstract class RefUpdate {
 		return update();
 	}
 
-	/**
-	 * Gracefully update the ref to the new value.
-	 * <p>
-	 * Merge test will be performed according to {@link #isForceUpdate()}.
-	 * <p>
-	 * This is the same as:
-	 *
-	 * <pre>
-	 * return update(new RevWalk(getRepository()));
-	 * </pre>
-	 *
-	 * @return the result status of the update.
-	 * @throws IOException
-	 *             an unexpected IO error occurred while writing changes.
-	 */
-	public Result update() throws IOException {
-		try (RevWalk rw = new RevWalk(getRepository())) {
-			return update(rw);
-		}
-	}
+   /**
+    * Gracefully update the ref to the new value.
+    * <p>
+    * Merge test will be performed according to {@link #isForceUpdate()}.
+    * <p>
+    * This is the same as:
+    *
+    * <pre>
+    * return update(new RevWalk(getRepository()));
+    * </pre>
+    *
+    * @return the result status of the update.
+    * @throws IOException
+    *             an unexpected IO error occurred while writing changes.
+    */
+   public Result update() throws IOException {
+       RevWalk rw = new RevWalk(getRepository());
+       try {
+           return update(rw);
+       } finally {
+           rw.close();
+       }
+   }
 
-	/**
-	 * Gracefully update the ref to the new value.
-	 * <p>
-	 * Merge test will be performed according to {@link #isForceUpdate()}.
-	 *
-	 * @param walk
-	 *            a RevWalk instance this update command can borrow to perform
-	 *            the merge test. The walk will be reset to perform the test.
-	 * @return the result status of the update.
-	 * @throws IOException
-	 *             an unexpected IO error occurred while writing changes.
-	 */
-	public Result update(final RevWalk walk) throws IOException {
-		requireCanDoUpdate();
-		try {
-			return result = updateImpl(walk, new Store() {
-				@Override
-				Result execute(Result status) throws IOException {
-					if (status == Result.NO_CHANGE)
-						return status;
-					return doUpdate(status);
-				}
-			});
-		} catch (IOException x) {
-			result = Result.IO_FAILURE;
-			throw x;
-		}
-	}
+  /**
+   * Get the old ref ID that should be used for passing to the replication engine.
+   *
+   * Where the expected (client) is available, we should use the it over the old rev as it is Git MS and not Gerrit MS that gets the lock
+   * on the git repo in the replicated scenario. This allows us to avoid overwriting commits in a repo which could have been updated
+   * already from another node.
+   *
+   * @return ObjectId that should be used for passing to the replication engine.
+   */
+  private ObjectId getReplicationOldObjectId() {
+    ObjectId clientOldObjectId = getExpectedOldObjectId();
+    return (clientOldObjectId != null) ? clientOldObjectId : getOldObjectId();
+  }
+
+   /**
+    * Gracefully update the ref to the new value.
+    * <p>
+    * Merge test will be performed according to {@link #isForceUpdate()}.
+    *
+    * @param walk
+    *            a RevWalk instance this update command can borrow to perform
+    *            the merge test. The walk will be reset to perform the test.
+    * @return the result status of the update.
+    * @throws IOException
+    *             an unexpected IO error occurred while writing changes.
+    */
+  public Result update(final RevWalk walk) throws IOException {
+    requireCanDoUpdate();
+
+    if (isReplicatedRepo()) {
+      doReplicatedUpdate();
+      ObjectId replicateOldObjID = getReplicationOldObjectId();
+
+      String name = getName();
+      String oldRef = ObjectId.toString(replicateOldObjID);
+      String nullRef = ObjectId.toString(ObjectId.zeroId());
+      if (name.startsWith("refs/meta/config") || name.startsWith("refs/changes/") ||
+              oldRef.equals(nullRef)) {
+        //bug in Gerrit, it does not treat a NO_CHANGE event for config/change updates
+        //as successful. Easier to workaround it here.
+        return Result.NEW;
+      } else {
+        RevObject newObj = safeParse(walk, newValue);
+        RevObject oldObj = safeParse(walk, replicateOldObjID);
+        if (newObj instanceof RevCommit && oldObj instanceof RevCommit) {
+          if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
+            return Result.FAST_FORWARD;
+          } else {
+            return Result.FORCED;
+          }
+        }
+        return Result.REJECTED;
+      }
+    } else {
+      return unreplicatedUpdate(walk);
+    }
+  }
+
+  public Result unreplicatedUpdate(final RevWalk walk) throws IOException {
+    try {
+      result = updateImpl(walk, new Store() {
+        @Override
+        Result execute(Result status) throws IOException {
+          if (status == Result.NO_CHANGE) {
+            return status;
+          }
+          return doUpdate(status);
+        }
+      });
+
+      return result;
+    } catch (IOException x) {
+      result = Result.IO_FAILURE;
+      throw x;
+    }
+  }
 
 	/**
 	 * Delete the ref.
@@ -541,16 +626,201 @@ public abstract class RefUpdate {
 		}
 	}
 
-	/**
-	 * Delete the ref.
-	 *
-	 * @param walk
-	 *            a RevWalk instance this delete command can borrow to perform
-	 *            the merge test. The walk will be reset to perform the test.
-	 * @return the result status of the delete.
-	 * @throws IOException
-	 */
-	public Result delete(final RevWalk walk) throws IOException {
+	private boolean isReplicatedRepo() {
+		StoredConfig config = getRepository().getConfig();
+		return config.getBoolean("core", "replicated", false);
+	}
+
+  /**
+   * Determine the replicated update script to use. The script name can be
+   * defined in the git config.
+   *
+   * The git config file to be used can defined using the GIT_CONFIG environment
+   * variable, if this is not set the current user's .gitconfig file is used.
+   *
+   * @return The name of the update script including path if it exists in the
+   *         git config, the default 'rp-git-update' which should exist on the
+   *         path otherwise.
+   * @throws IOException
+   *           git config could not be read or is incorrect format.
+   */
+  private static String getRpUpdateScript() throws IOException {
+    return getGitConfigProperty("core",null,"rpupdatehook","rp-git-update") ;
+  }
+
+  /**
+   * The git config file to be used can defined using the GIT_CONFIG environment
+   * variable, if this is not set the current user's .gitconfig file is used.
+   *
+   * @return The requested name found the the section/subsection of the git config
+   *         or the given default if not found
+   * @throws IOException
+   *           git config could not be read or is incorrect format.
+   */
+  private static String getGitConfigProperty(String section, String subsection, String name, String defaultName) throws IOException {
+    String gitConfigLoc = System.getenv("GIT_CONFIG");
+
+    if (System.getenv("GIT_CONFIG") == null) {
+      gitConfigLoc = System.getProperty("user.home") + "/.gitconfig";
+    }
+
+    FileBasedConfig config = new FileBasedConfig(new File(gitConfigLoc), FS.DETECTED);
+    try {
+      config.load();
+    } catch (ConfigInvalidException e) {
+      // Configuration file is not in the valid format, throw exception back.
+      throw new IOException(e);
+    }
+
+    String configScript = config.getString(section,subsection,name);
+
+    if (configScript != null && new File(configScript).exists()) {
+      return configScript;
+    } else {
+      return defaultName;
+    }
+
+  }
+
+  /**
+   * log utility to be used for debug purposes
+   * @param s
+   */
+  public static void logMe(String s)   {
+       if (!logMeEnabled) return;
+       try {
+           PrintWriter p;
+           p = new PrintWriter(new FileWriter("/tmp/gitms.log", true));
+           p.println(new Date().toString());
+           p.println(s);
+           p.close();
+       } catch (IOException ex) {
+           ex.printStackTrace(System.err);
+       }
+   }
+
+    /**
+     * As per https://jira.wandisco.com/browse/GER-49
+     * Executes a process described in command[], in the workingDir, adding the envVars variables to the environment.
+     * The output (stdout and stderr) of the process will be available in the processOutput StringBuilder which must be provided
+     * by the caller. The stderror will be redirected to the stdoutput
+     * @param command       The command to be executed
+     * @param workingDir    The working dir
+     * @param envVars       The environment variables
+     * @param processOutput a StringBuilder provided by the caller which will contain the process output (stderr and stdout)
+     * @return              The return code of the process
+     * @throws IOException
+     */
+    private int execProcess(String[] command, final File workingDir, Map<String,String> envVars, final StringBuilder processOutput,
+            String processStdIn) throws IOException {
+      ProcessBuilder proBuilder = new ProcessBuilder(command);
+      proBuilder.redirectErrorStream(true);
+      proBuilder.directory(workingDir);
+      Map<String, String> environment = proBuilder.environment();
+      environment.putAll(envVars);
+
+      logMe("Running "+command[0]+", in "+workingDir+", input="+processStdIn);
+      final Process process = proBuilder.start();
+
+      BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream(), Charset.forName("UTF-8")));
+      if (processStdIn != null) {
+          PrintWriter pw = new PrintWriter(new OutputStreamWriter(process.getOutputStream()));
+          pw.println(processStdIn);
+          pw.close();
+      }
+      String line;
+      String newLine = System.getProperty("line.separator");
+      processOutput.append(newLine);
+      try {
+        while ((line = br.readLine()) != null) {
+            processOutput.append(line).append(newLine);
+        }
+      } catch(IOException e) {
+          processOutput.append("[Caught IOException: ").append(e.getMessage());
+          int processReturnCode = 0;
+          try {
+            processReturnCode = process.waitFor();
+          } catch(InterruptedException ignored) {
+          }
+          processOutput.append(", return code=").append(processReturnCode).append("]");
+          throw new IOException(processOutput.toString(), e);
+      }
+
+      int returnCode = -1;
+      try {
+          returnCode = process.waitFor();
+      } catch (InterruptedException ex) {
+      }
+      return returnCode;
+
+  }
+
+  private static final ThreadLocal<String> username = new ThreadLocal<String>();
+
+  public static void setUsername(String user) {
+    username.set(user);
+  }
+
+    private void doReplicatedUpdate() throws IOException {
+      String user = username.get();
+      setUsername(null);
+      String fsPath = getRepository().getDirectory().getAbsolutePath();
+      String oldRev = ObjectId.toString(getReplicationOldObjectId());
+      String newRev = ObjectId.toString(getNewObjectId());
+      String[] commandUpdate = { getRpUpdateScript(), getName(), oldRev, newRev};
+
+      StringBuilder processOutput = new StringBuilder("Failure to replicate update.");
+      Map<String, String> environment = new HashMap<>();
+      environment.put("GIT_DIR", ".");
+      if (!StringUtils.isEmptyOrNull(user)) {
+        environment.put("ACP_USER", user);
+      }
+
+      //get the lastModified for the ref prior to the update
+      File refFile = new File(fsPath, getName());
+      long oldLastModified = refFile.lastModified();
+
+      // this call will block until the update has happened on the local node
+      int returnCode = execProcess(commandUpdate,new File(fsPath),environment,processOutput, null);
+
+      if (returnCode != 0) {
+        throw new IOException(processOutput.toString());
+      }
+
+      // force a reload of the ref if the lastModified is within 2.5 seconds of
+      // the last time a push was made to the same ref.
+      if (refFile.lastModified() - oldLastModified <= 2500) {
+        getRefDatabase().getRef(getName());
+      }
+    }
+
+  private boolean canDelete() throws IOException {
+	  final String myName = detachingSymbolicRef
+			  ? getRef().getName()
+			  : getRef().getLeaf().getName();
+    if (myName.startsWith(Constants.R_HEADS)  && !getRepository().isBare()) {
+      Ref head = getRefDatabase().getRef(Constants.HEAD);
+      while (head != null && head.isSymbolic()) {
+        head = head.getTarget();
+        if (myName.equals(head.getName())) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  public Result unreplicatedDelete(final RevWalk walk) throws IOException {
+    if (!canDelete()) {
+      result = Result.REJECTED_CURRENT_BRANCH;
+      return result;
+    }
+
+    return _delete(walk);
+  }
+
+	private Result _delete(final RevWalk walk) throws IOException {
 		final String myName = detachingSymbolicRef
 				? getRef().getName()
 				: getRef().getLeaf().getName();
@@ -578,53 +848,157 @@ public abstract class RefUpdate {
 	}
 
 	/**
-	 * Replace this reference with a symbolic reference to another reference.
-	 * <p>
-	 * This exact reference (not its traversed leaf) is replaced with a symbolic
-	 * reference to the requested name.
-	 *
-	 * @param target
-	 *            name of the new target for this reference. The new target name
-	 *            must be absolute, so it must begin with {@code refs/}.
-	 * @return {@link Result#NEW} or {@link Result#FORCED} on success.
-	 * @throws IOException
-	 */
-	public Result link(String target) throws IOException {
-		if (!target.startsWith(Constants.R_REFS))
-			throw new IllegalArgumentException(MessageFormat.format(JGitText.get().illegalArgumentNotA, Constants.R_REFS));
-		if (checkConflicting && getRefDatabase().isNameConflicting(getName()))
-			return Result.LOCK_FAILURE;
-		try {
-			if (!tryLock(false))
-				return Result.LOCK_FAILURE;
+  /**
+     * Delete the ref.
+     *
+     * @param walk
+     *            a RevWalk instance this delete command can borrow to perform
+     *            the merge test. The walk will be reset to perform the test.
+     * @return the result status of the delete.
+     * @throws IOException
+     */
+  public Result delete(final RevWalk walk) throws IOException {
+    if (!canDelete()) {
+      result = Result.REJECTED_CURRENT_BRANCH;
+      return result;
+    }
 
-			final Ref old = getRefDatabase().getRef(getName());
-			if (old != null && old.isSymbolic()) {
-				final Ref dst = old.getTarget();
-				if (target.equals(dst.getName()))
-					return result = Result.NO_CHANGE;
-			}
+    if (isReplicatedRepo()) {
+      doReplicatedUpdate();
+      return Result.NO_CHANGE;
+    } else {
+      return _delete(walk);
+    }
+  }
 
-			if (old != null && old.getObjectId() != null)
-				setOldObjectId(old.getObjectId());
+  public Result unreplicatedLink(String target) throws IOException {
+    if (checkConflicting && getRefDatabase().isNameConflicting(getName())) {
+      return Result.LOCK_FAILURE;
+    }
+    try {
+      if (!tryLock(false)) {
+        return Result.LOCK_FAILURE;
+      }
 
-			final Ref dst = getRefDatabase().getRef(target);
-			if (dst != null && dst.getObjectId() != null)
-				setNewObjectId(dst.getObjectId());
+      final Ref old = getRefDatabase().getRef(getName());
+      if (old != null && old.isSymbolic()) {
+        final Ref dst = old.getTarget();
+        if (target.equals(dst.getName())) {
+          return result = Result.NO_CHANGE;
+        }
+      }
 
-			return result = doLink(target);
-		} catch (IOException x) {
-			result = Result.IO_FAILURE;
-			throw x;
-		} finally {
-			unlock();
-		}
-	}
+      if (old != null && old.getObjectId() != null) {
+        setOldObjectId(old.getObjectId());
+      }
 
-	private Result updateImpl(final RevWalk walk, final Store store)
-			throws IOException {
-		RevObject newObj;
-		RevObject oldObj;
+      final Ref dst = getRefDatabase().getRef(target);
+      if (dst != null && dst.getObjectId() != null) {
+        setNewObjectId(dst.getObjectId());
+      }
+
+      return result = doLink(target);
+    } catch (IOException x) {
+      result = Result.IO_FAILURE;
+      throw x;
+    } finally {
+      unlock();
+    }
+  }
+
+  /**
+   * Replace this reference with a symbolic reference to another reference.
+   * <p>
+   * This exact reference (not its traversed leaf) is replaced with a symbolic
+   * reference to the requested name.
+   *
+   * @param target name of the new target for this reference. The new target
+   * name must be absolute, so it must begin with {@code refs/}.
+   * @return {@link Result#NEW} or {@link Result#FORCED} on success.
+   * @throws IOException
+   */
+  public Result link(String target) throws IOException {
+    if (!target.startsWith(Constants.R_REFS)) {
+      throw new IllegalArgumentException(MessageFormat.format(JGitText.get().illegalArgumentNotA, Constants.R_REFS));
+    }
+
+    if (isReplicatedRepo()) {
+      String gitConfigLoc = System.getenv("GIT_CONFIG");
+
+      if (System.getenv("GIT_CONFIG") == null) {
+        gitConfigLoc = System.getProperty("user.home") + "/.gitconfig";
+      }
+
+      FileBasedConfig config = new FileBasedConfig(new File(gitConfigLoc), FS.DETECTED);
+      try {
+        config.load();
+      } catch (ConfigInvalidException e) {
+        // Configuration file is not in the valid format, throw exception back.
+        throw new IOException(e);
+      }
+
+      String appProperties = config.getString("core", null, "gitmsconfig");
+      String port = null;
+
+      if (!StringUtils.isEmptyOrNull(appProperties)) {
+        File appPropertiesFile = new File(appProperties);
+        if (appPropertiesFile.canRead()) {
+          port = getProperty(appPropertiesFile, "gitms.local.jetty.port");
+        } else {
+          throw new IOException("Failed to read application.properties, gitmsconfig is not set in ~/.gitconfig");
+        }
+      }
+
+      if (port != null && !port.isEmpty()) {
+        try {
+          String newHead = URLEncoder.encode(target, "UTF-8");
+          String repoPath = URLEncoder.encode(getRepository().getDirectory().getAbsolutePath(), "UTF-8");
+          URL url = new URL("http://127.0.0.1:" + port + "/gerrit/setHead?"
+                  + "newHead=" + newHead + "&" + "repoPath=" + repoPath);
+          HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
+          httpCon.setUseCaches(false);
+          httpCon.setRequestMethod("PUT");
+          int response = httpCon.getResponseCode();
+          httpCon.disconnect();
+
+          //TODO: Catch errors here/do timeout logic if required
+          if (response != 200) {
+            throw new IOException("Failure to update repo HEAD, return code from replicator: " + response);
+          }
+        } catch (IOException e) {
+          throw new IOException("Error with updating repo HEAD: " + e.toString());
+        }
+      }
+    }
+
+    //fall through to unreplicatedLink if we can't get enough information to replicate
+    return unreplicatedLink(target);
+  }
+
+  public String getProperty(File appProps, String propertyName) throws IOException{
+    Properties props = new Properties();
+    InputStream input = null;
+    try {
+      input = new FileInputStream(appProps);
+      props.load(input);
+      return props.getProperty(propertyName);
+    } catch (IOException e) {
+      throw new IOException("Could not read " + appProps.getAbsolutePath());
+    } finally {
+      if (input != null) {
+        try {
+          input.close();
+        } catch (IOException ex) {
+
+        }
+      }
+    }
+  }
+
+   private Result updateImpl(final RevWalk walk, final Store store)
+           throws IOException {
+       RevObject newObj;
+       RevObject oldObj;
 
 		// don't make expensive conflict check if this is an existing Ref
 		if (oldValue == null && checkConflicting && getRefDatabase().isNameConflicting(getName()))

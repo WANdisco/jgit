@@ -42,6 +42,19 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
+
 package org.eclipse.jgit.merge;
 
 import static org.eclipse.jgit.lib.Constants.CHARACTER_ENCODING;
@@ -55,6 +68,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -761,7 +776,7 @@ public class ResolveMerger extends ThreeWayMerger {
 				: FileMode.fromBits(newMode));
 		if (mergedFile != null) {
 			long len = mergedFile.length();
-			dce.setLastModified(FS.DETECTED.lastModified(mergedFile));
+			dce.setLastModified(Files.getLastModifiedTime(Paths.get(mergedFile.getAbsolutePath())).toMillis());
 			dce.setLength((int) len);
 			InputStream is = new FileInputStream(mergedFile);
 			try {

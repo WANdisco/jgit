@@ -1,0 +1,15 @@
+
+Lists of 13 third-party dependencies.
+     (Unknown license) args4j (args4j:args4j:2.0.15 - http://args4j.dev.java.net/args4j/)
+     (The Apache Software License, Version 2.0) Apache Log4j (log4j:log4j:1.2.15 - http://logging.apache.org:80/log4j/1.2/)
+     (The Apache Software License, Version 2.0) Apache Commons Compress (org.apache.commons:commons-compress:1.6 - http://commons.apache.org/proper/commons-compress/)
+     (Apache License, Version 2.0) Apache HttpClient (org.apache.httpcomponents:httpclient:4.3.6 - http://hc.apache.org/httpcomponents-client)
+     (Apache Software License - Version 2.0) (Eclipse Public License - Version 1.0) Jetty :: Servlet Handling (org.eclipse.jetty:jetty-servlet:9.2.13.v20150730 - http://www.eclipse.org/jetty)
+     (Eclipse Distribution License (New BSD License)) JGit - Core (org.eclipse.jgit:org.eclipse.jgit:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit)
+     (Eclipse Distribution License (New BSD License)) JGit - Archive Formats (org.eclipse.jgit:org.eclipse.jgit.archive:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit.archive)
+     (Eclipse Distribution License (New BSD License)) JGit - Apache httpclient based HTTP support (org.eclipse.jgit:org.eclipse.jgit.http.apache:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit.http.apache)
+     (Eclipse Distribution License (New BSD License)) JGit - Large File Storage (org.eclipse.jgit:org.eclipse.jgit.lfs:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit.lfs)
+     (Eclipse Distribution License (New BSD License)) JGit - Large File Storage Server (org.eclipse.jgit:org.eclipse.jgit.lfs.server:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit.lfs.server)
+     (Eclipse Distribution License (New BSD License)) JGit - AWT User Interface (org.eclipse.jgit:org.eclipse.jgit.ui:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit.ui)
+     (MIT License) SLF4J API Module (org.slf4j:slf4j-api:1.7.2 - http://www.slf4j.org)
+     (MIT License) SLF4J LOG4J-12 Binding (org.slf4j:slf4j-log4j12:1.7.2 - http://www.slf4j.org)

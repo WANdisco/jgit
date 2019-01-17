@@ -40,11 +40,25 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.internal.storage.file;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -103,13 +117,13 @@ public class FileSnapshot {
 	 * @return the snapshot.
 	 */
 	public static FileSnapshot save(File path) {
-		long read = System.currentTimeMillis();
+		final long read = System.currentTimeMillis();
 		long modified;
-		try {
-			modified = FS.DETECTED.lastModified(path);
-		} catch (IOException e) {
-			modified = path.lastModified();
-		}
+    try {
+      modified = Files.getLastModifiedTime(Paths.get(path.getAbsolutePath())).toMillis();
+    } catch (IOException ex) {
+      modified = path.lastModified();
+    }
 		return new FileSnapshot(read, modified);
 	}
 
@@ -161,7 +175,7 @@ public class FileSnapshot {
 	public boolean isModified(File path) {
 		long currLastModified;
 		try {
-			currLastModified = FS.DETECTED.lastModified(path);
+			currLastModified = Files.getLastModifiedTime(Paths.get(path.getAbsolutePath())).toMillis();
 		} catch (IOException e) {
 			currLastModified = path.lastModified();
 		}

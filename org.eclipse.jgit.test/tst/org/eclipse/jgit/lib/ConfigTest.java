@@ -48,29 +48,6 @@
 
 package org.eclipse.jgit.lib;
 
-import static java.util.concurrent.TimeUnit.DAYS;
-import static java.util.concurrent.TimeUnit.HOURS;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.text.MessageFormat;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-
 import org.eclipse.jgit.api.MergeCommand.FastForwardMode;
 import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.internal.JGitText;
@@ -84,6 +61,29 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.text.MessageFormat;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+
+import static java.util.concurrent.TimeUnit.DAYS;
+import static java.util.concurrent.TimeUnit.HOURS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Test reading of git config
@@ -252,13 +252,16 @@ public class ConfigTest {
 	@Test
 	public void testReadUserConfigWithInvalidCharactersStripped() {
 		final MockSystemReader mockSystemReader = new MockSystemReader();
-		final Config localConfig = new Config(mockSystemReader.openUserConfig(
-				null, FS.DETECTED));
+		SystemReader.setInstance(mockSystemReader);
+		final Config userGitConfig = mockSystemReader.openUserConfig(null,
+				FS.DETECTED);
+		mockSystemReader.clearProperties();
 
-		localConfig.setString("user", null, "name", "foo<bar");
-		localConfig.setString("user", null, "email", "baz>\nqux@example.com");
+		userGitConfig.setString("user", null, "name", "foo<bar");
+		userGitConfig.setString("user", null, "email", "baz>\nqux@example.com");
 
-		UserConfig userConfig = localConfig.get(UserConfig.KEY);
+		UserConfig userConfig = userGitConfig.get(UserConfig.KEY);
+
 		assertEquals("foobar", userConfig.getAuthorName());
 		assertEquals("bazqux@example.com", userConfig.getAuthorEmail());
 	}
