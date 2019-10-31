@@ -204,6 +204,13 @@ public class SubmoduleAddCommand extends
 		}
 
 		try {
+			SubmoduleValidator.assertValidSubmoduleName(path);
+			SubmoduleValidator.assertValidSubmodulePath(path);
+			SubmoduleValidator.assertValidSubmoduleUri(uri);
+		} catch (SubmoduleValidator.SubmoduleValidationException e) {
+			throw new IllegalArgumentException(e.getMessage());
+		}
+		try {
 			if (submoduleExists())
 				throw new JGitInternalException(MessageFormat.format(
 						JGitText.get().submoduleExists, path));

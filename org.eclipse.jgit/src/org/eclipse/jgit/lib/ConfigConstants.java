@@ -434,6 +434,12 @@ public final class ConfigConstants {
 	public static final String CONFIG_SECTION_LFS = "lfs";
 
 	/**
+	 * The Git MultiSite Replication section
+	 */
+	public static final String GITMSCONFIG = "gitmsconfig";
+
+
+	/**
 	 * The "filesystem" section
 	 * @since 5.1.9
 	 */

@@ -124,6 +124,29 @@ public class FileSnapshotTest {
 	}
 
 	/**
+	 * Check that file is modified by looking at its size.
+	 *
+	 * @throws Exception
+	 */
+	@Test
+	public void tesIsModifiedBySameLastModifiedAndDifferentSize() throws Exception {
+		Path p1 = createFile("foo", "lorem".getBytes());
+		Path p2 = createFile("bar", "lorem ipsum".getBytes());
+		File f1 = p1.toFile();
+		File f2 = p2.toFile();
+
+		f1.setLastModified(f2.lastModified()); // Make sure f1 and f2 have the same lastModified
+		FileSnapshot save = FileSnapshot.save(f1);
+
+		// Make sure that the modified and read timestamps are far enough, so that
+		// check is done by size
+		Thread.sleep(3000L);
+
+		assertEquals(save.lastModified(), f2.lastModified());
+		assertTrue(save.isModified(f2));
+	}
+
+	/**
 	 * Create a file, but don't wait long enough for the difference between file
 	 * system clock and system clock to be significant. Assume the file may have
 	 * been modified. It may have been, but the clock alone cannot determine
@@ -296,11 +319,22 @@ public class FileSnapshotTest {
 		return Files.createTempFile(trash, string, "tdat");
 	}
 
+	private Path createFile(String string, byte b[]) throws IOException {
+		Path file = createFile( string );
+		append(file, b);
+		return file;
+	}
+
+	private static void append(Path f, byte bytes[]) throws IOException {
+		try (OutputStream os = Files.newOutputStream(f,
+				StandardOpenOption.APPEND)) {
+			os.write(bytes);
+		}
+	}
 	private static void append(Path f, byte b) throws IOException {
 		try (OutputStream os = Files.newOutputStream(f,
 				StandardOpenOption.APPEND)) {
 			os.write(b);
 		}
 	}
-
 }

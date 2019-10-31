@@ -39,10 +39,39 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.dircache;
 
-import static org.eclipse.jgit.treewalk.TreeWalk.OperationType.CHECKOUT_OP;
+import org.eclipse.jgit.api.errors.CanceledException;
+import org.eclipse.jgit.api.errors.FilterFailedException;
+import org.eclipse.jgit.attributes.FilterCommand;
+import org.eclipse.jgit.attributes.FilterCommandRegistry;
+import org.eclipse.jgit.errors.*;
+import org.eclipse.jgit.events.WorkingTreeModifiedEvent;
+import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.*;
+import org.eclipse.jgit.lib.CoreConfig.AutoCRLF;
+import org.eclipse.jgit.lib.CoreConfig.EolStreamType;
+import org.eclipse.jgit.lib.CoreConfig.SymLinks;
+import org.eclipse.jgit.treewalk.*;
+import org.eclipse.jgit.treewalk.filter.PathFilter;
+import org.eclipse.jgit.util.*;
+import org.eclipse.jgit.util.FS.ExecutionResult;
+import org.eclipse.jgit.util.io.EolStreamTypeUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -51,54 +80,9 @@ import java.io.OutputStream;
 import java.nio.file.StandardCopyOption;
 import java.text.MessageFormat;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-import org.eclipse.jgit.api.errors.CanceledException;
-import org.eclipse.jgit.api.errors.FilterFailedException;
-import org.eclipse.jgit.attributes.FilterCommand;
-import org.eclipse.jgit.attributes.FilterCommandRegistry;
-import org.eclipse.jgit.errors.CheckoutConflictException;
-import org.eclipse.jgit.errors.CorruptObjectException;
-import org.eclipse.jgit.errors.IncorrectObjectTypeException;
-import org.eclipse.jgit.errors.IndexWriteException;
-import org.eclipse.jgit.errors.MissingObjectException;
-import org.eclipse.jgit.events.WorkingTreeModifiedEvent;
-import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.lib.ConfigConstants;
-import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.CoreConfig.AutoCRLF;
-import org.eclipse.jgit.lib.CoreConfig.EolStreamType;
-import org.eclipse.jgit.lib.CoreConfig.SymLinks;
-import org.eclipse.jgit.lib.FileMode;
-import org.eclipse.jgit.lib.NullProgressMonitor;
-import org.eclipse.jgit.lib.ObjectChecker;
-import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.ObjectLoader;
-import org.eclipse.jgit.lib.ObjectReader;
-import org.eclipse.jgit.lib.ProgressMonitor;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.treewalk.AbstractTreeIterator;
-import org.eclipse.jgit.treewalk.CanonicalTreeParser;
-import org.eclipse.jgit.treewalk.EmptyTreeIterator;
-import org.eclipse.jgit.treewalk.FileTreeIterator;
-import org.eclipse.jgit.treewalk.NameConflictTreeWalk;
-import org.eclipse.jgit.treewalk.TreeWalk;
-import org.eclipse.jgit.treewalk.WorkingTreeIterator;
-import org.eclipse.jgit.treewalk.WorkingTreeOptions;
-import org.eclipse.jgit.treewalk.filter.PathFilter;
-import org.eclipse.jgit.util.FS;
-import org.eclipse.jgit.util.FS.ExecutionResult;
-import org.eclipse.jgit.util.FileUtils;
-import org.eclipse.jgit.util.IntList;
-import org.eclipse.jgit.util.RawParseUtils;
-import org.eclipse.jgit.util.SystemReader;
-import org.eclipse.jgit.util.io.EolStreamTypeUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.eclipse.jgit.treewalk.TreeWalk.OperationType.CHECKOUT_OP;
 
 /**
  * This class handles checking out one or two trees merging with the index.

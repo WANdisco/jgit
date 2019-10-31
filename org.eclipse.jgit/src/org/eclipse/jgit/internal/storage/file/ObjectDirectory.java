@@ -40,33 +40,20 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.internal.storage.file;
-
-import static org.eclipse.jgit.internal.storage.pack.PackExt.INDEX;
-import static org.eclipse.jgit.internal.storage.pack.PackExt.PACK;
-
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.jgit.errors.CorruptObjectException;
 import org.eclipse.jgit.errors.PackInvalidException;
@@ -75,20 +62,23 @@ import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.pack.ObjectToPack;
 import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.eclipse.jgit.internal.storage.pack.PackWriter;
-import org.eclipse.jgit.lib.AbbreviatedObjectId;
-import org.eclipse.jgit.lib.AnyObjectId;
-import org.eclipse.jgit.lib.Config;
-import org.eclipse.jgit.lib.ConfigConstants;
-import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.ObjectDatabase;
-import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.ObjectLoader;
-import org.eclipse.jgit.lib.RepositoryCache;
+import org.eclipse.jgit.lib.*;
 import org.eclipse.jgit.lib.RepositoryCache.FileKey;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.text.MessageFormat;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.eclipse.jgit.internal.storage.pack.PackExt.INDEX;
+import static org.eclipse.jgit.internal.storage.pack.PackExt.PACK;
 
 /**
  * Traditional file system based {@link org.eclipse.jgit.lib.ObjectDatabase}.
@@ -112,13 +102,15 @@ public class ObjectDirectory extends FileObjectDatabase {
 	private final static Logger LOG = LoggerFactory
 			.getLogger(ObjectDirectory.class);
 
-	private static final PackList NO_PACKS = new PackList(
-			FileSnapshot.DIRTY, new PackFile[0]);
+    private static final PackList NO_PACKS = new PackList(
+            FileSnapshot.DIRTY, new PackFile[0]);
 
-	/** Maximum number of candidates offered as resolutions of abbreviation. */
-	private static final int RESOLVE_ABBREV_LIMIT = 256;
+    /**
+     * Maximum number of candidates offered as resolutions of abbreviation.
+     */
+    private static final int RESOLVE_ABBREV_LIMIT = 256;
 
-	private final AlternateHandle handle = new AlternateHandle(this);
+    private final AlternateHandle handle = new AlternateHandle(this);
 
 	private final Config config;
 
@@ -759,17 +751,19 @@ public class ObjectDirectory extends FileObjectDatabase {
 		// fail.
 		//
 		FileUtils.delete(tmp, FileUtils.RETRY);
-		return InsertLooseObjectResult.FAILURE;
-	}
+        return InsertLooseObjectResult.FAILURE;
+    }
 
-	boolean searchPacksAgain(PackList old) {
-		// Whether to trust the pack folder's modification time. If set
-		// to false we will always scan the .git/objects/pack folder to
-		// check for new pack files. If set to true (default) we use the
-		// lastmodified attribute of the folder and assume that no new
-		// pack files can be in this folder if his modification time has
-		// not changed.
-		boolean trustFolderStat = config.getBoolean(
+
+    boolean searchPacksAgain(PackList old) {
+
+        // Whether to trust the pack folder's modification time. If set
+        // to false we will always scan the .git/objects/pack folder to
+        // check for new pack files. If set to true (default) we use the
+        // lastmodified attribute of the folder and assume that no new
+        // pack files can be in this folder if his modification time has
+        // not changed.
+        boolean trustFolderStat = config.getBoolean(
 				ConfigConstants.CONFIG_CORE_SECTION,
 				ConfigConstants.CONFIG_KEY_TRUSTFOLDERSTAT, true);
 
@@ -777,7 +771,7 @@ public class ObjectDirectory extends FileObjectDatabase {
 				&& old != scanPacks(old);
 	}
 
-	@Override
+    @Override
 	Config getConfig() {
 		return config;
 	}

@@ -81,7 +81,6 @@ public class PushConnectionTest {
 	private InMemoryRepository server;
 	private InMemoryRepository client;
 	private List<String> processedRefs;
-	private ObjectId obj1;
 	private ObjectId obj2;
 	private ObjectId obj3;
 	private String refName = "refs/tags/blob";
@@ -113,6 +112,8 @@ public class PushConnectionTest {
 					}
 				});
 		uri = testProtocol.register(ctx, server);
+
+		ObjectId obj1;
 
 		try (ObjectInserter ins = server.newObjectInserter()) {
 			obj1 = ins.insert(Constants.OBJ_BLOB, Constants.encode("test"));
@@ -201,7 +202,7 @@ public class PushConnectionTest {
 			updates.put(rru.getRemoteName(), rru);
 		}
 
-		server.getConfig().setInt("receive", null, "maxCommandBytes", 195);
+		server.getConfig().setInt("receive", null, "maxCommandBytes", 200);
 		try (Transport tn = testProtocol.open(uri, client, "server");
 				PushConnection connection = tn.openPush()) {
 			try {

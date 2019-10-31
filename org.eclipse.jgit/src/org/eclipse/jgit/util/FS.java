@@ -40,6 +40,18 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.util;
 
@@ -58,10 +70,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.Writer;
 import java.nio.charset.Charset;
-import java.nio.file.AccessDeniedException;
-import java.nio.file.FileStore;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.security.AccessController;
@@ -868,7 +877,7 @@ public abstract class FS {
 	 */
 	@Deprecated
 	public long lastModified(File f) throws IOException {
-		return FileUtils.lastModified(f);
+		return Files.getLastModifiedTime(f.toPath(), LinkOption.NOFOLLOW_LINKS).toMillis();
 	}
 
 	/**

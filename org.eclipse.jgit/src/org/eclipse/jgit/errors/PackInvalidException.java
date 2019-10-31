@@ -56,7 +56,7 @@ public class PackInvalidException extends IOException {
 	private static final long serialVersionUID = 1L;
 
 	/**
-	 * Construct a pack invalid error.
+	 * Construct a pack invalid error with cause.
 	 *
 	 * @param path
 	 *            path of the invalid pack file.

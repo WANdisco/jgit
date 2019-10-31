@@ -500,14 +500,14 @@ public class WalkEncryptionTest {
 
 			String no_proxy = System.getProperty(keyNoProxy,
 					System.getenv(keyNoProxy));
-			if (no_proxy != null) {
+			if (no_proxy != null && !no_proxy.isEmpty()) {
 				System.setProperty("http.nonProxyHosts", no_proxy);
 				logger.info("Proxy NOT: " + no_proxy);
 			}
 
 			String http_proxy = System.getProperty(keyHttpProxy,
 					System.getenv(keyHttpProxy));
-			if (http_proxy != null) {
+			if (http_proxy != null && !http_proxy.isEmpty()) {
 				URL url = new URL(http_proxy);
 				System.setProperty("http.proxyHost", url.getHost());
 				System.setProperty("http.proxyPort", "" + url.getPort());
@@ -516,17 +516,18 @@ public class WalkEncryptionTest {
 
 			String https_proxy = System.getProperty(keyHttpsProxy,
 					System.getenv(keyHttpsProxy));
-			if (https_proxy != null) {
+			if (https_proxy != null && !https_proxy.isEmpty()) {
 				URL url = new URL(https_proxy);
 				System.setProperty("https.proxyHost", url.getHost());
 				System.setProperty("https.proxyPort", "" + url.getPort());
 				logger.info("Proxy HTTPS: " + https_proxy);
 			}
 
-			if (no_proxy == null && http_proxy == null && https_proxy == null) {
+			if ((no_proxy == null || no_proxy.isEmpty()) &&
+					(http_proxy == null || http_proxy.isEmpty()) &&
+					(https_proxy == null || https_proxy.isEmpty())) {
 				logger.info("Proxy not used.");
 			}
-
 		}
 
 		/**
