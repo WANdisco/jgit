@@ -1602,10 +1602,10 @@ public abstract class BaseReceivePack {
 
 	private void checkSubmodules()
 			throws IOException {
-		ObjectDatabase odb = db.getObjectDatabase();
 		if (objectChecker == null) {
 			return;
 		}
+		ObjectDatabase odb = db.getObjectDatabase();
 		for (GitmoduleEntry entry : objectChecker.getGitsubmodules()) {
 			AnyObjectId blobId = entry.getBlobId();
 			ObjectLoader blob = odb.open(blobId, Constants.OBJ_BLOB);

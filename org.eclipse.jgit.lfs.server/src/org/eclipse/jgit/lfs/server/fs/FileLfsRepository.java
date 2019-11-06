@@ -55,7 +55,6 @@
 
 package org.eclipse.jgit.lfs.server.fs;
 
-import com.google.common.base.Strings;
 import com.wandisco.gerrit.gitms.shared.api.lfs.dto.LfsObjectInfoDTO;
 import com.wandisco.gerrit.gitms.shared.api.lfs.dto.LfsRequestTypeProperties.LfsItemType;
 import com.wandisco.gerrit.gitms.shared.lfs.GitLfsCache;
@@ -70,6 +69,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 
+import com.wandisco.gerrit.gitms.shared.util.StringUtils;
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.lfs.internal.AtomicObjectOutputStream;
 import org.eclipse.jgit.lfs.lib.AnyLongObjectId;
@@ -228,7 +228,7 @@ public class FileLfsRepository implements LargeFileRepository {
 
             // For safety, to make sure replication group id we haven't isn't stale always
             // request here using repoId or repoName.
-            if (replicationInfo == null || Strings.isNullOrEmpty(replicationInfo.repositoryId)) {
+            if (replicationInfo == null || StringUtils.isNullOrEmpty(replicationInfo.repositoryId)) {
                 // we dont have the repoId, use the repo name.
                 keyValue = replicationInfo.repositoryName;
                 keyType = LfsItemType.REPOSITORYNAME;
@@ -261,7 +261,7 @@ public class FileLfsRepository implements LargeFileRepository {
         final boolean isReplicated = 
                 ((objectInfo != null) && 
                 (objectInfo.objectInfo != null) && 
-                !Strings.isNullOrEmpty(objectInfo.objectInfo.oid));
+                !StringUtils.isNullOrEmpty(objectInfo.objectInfo.oid));
         
         logger.info("LFS Remote server indicated item replicated status: {}", Boolean.toString(isReplicated));//$NON-NLS-<n>$
 
@@ -298,7 +298,7 @@ public class FileLfsRepository implements LargeFileRepository {
      *          FALSE means we have to go and check
      */
     private boolean checkIsItemInLocalCache(AnyLongObjectId id) {
-        if (Strings.isNullOrEmpty(getReplicaGroupIdentifier())) {
+        if (StringUtils.isNullOrEmpty(getReplicaGroupIdentifier())) {
             // if we have'nt got the rep group identifier, then just return false.
             // we can't do any more here.
             return false;
@@ -343,8 +343,8 @@ public class FileLfsRepository implements LargeFileRepository {
     private void checkHaveCachedReplicationGroupIdentificationInfo() {
         // check if we have replication group identifier for this repo if we have an id
         // to look it up by.
-        if (Strings.isNullOrEmpty(getReplicaGroupIdentifier())
-                && (!Strings.isNullOrEmpty(replicationInfo.repositoryId))) {
+        if (StringUtils.isNullOrEmpty(getReplicaGroupIdentifier())
+                && (!StringUtils.isNullOrEmpty(replicationInfo.repositoryId))) {
             // we dont have the replica group identifier locally.
             // ok see if we can request the information about this object using our repository
             // identifier instead.

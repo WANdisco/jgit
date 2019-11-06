@@ -34,6 +34,19 @@ maven_jar(
     sha1 = "a1551373315ffc2f96130a0e5704f74e151777ba",
 )
 
+# WANdisco maven assets
+# TREV TODO check how to make this provided scope in LFS server?
+_GERRIT_GITMS_VERSION = "1.1.0.1-TC1"
+WANDISCO_ASSETS = "WANDISCO:"
+
+maven_jar(
+    name = "gerrit-gitms-interface",
+    artifact = "com.wandisco:gerrit-gitms-interface:" + _GERRIT_GITMS_VERSION,
+    repository = WANDISCO_ASSETS,
+    #    sha1 = 213e4234
+)
+
+
 maven_jar(
     name = "javaewah",
     artifact = "com.googlecode.javaewah:JavaEWAH:1.1.6",
