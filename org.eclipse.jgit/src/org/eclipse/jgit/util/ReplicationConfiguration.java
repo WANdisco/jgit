@@ -8,6 +8,7 @@ import java.util.Properties;
 
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_CORE_SECTION;
 import static org.eclipse.jgit.lib.ConfigConstants.GITMSCONFIG;
+import static org.eclipse.jgit.lib.Constants.REPLICATION_DISABLED;
 
 /**
  * Simply the ability to obtain, or check if we are using replication.
@@ -18,6 +19,10 @@ public class ReplicationConfiguration {
     private static long appPropsLastModified = 0;
     private static Properties appProperties = new Properties();
     private final static Object appPropertiesLocking = new Object();
+
+    // A flag, which allow there to be no application properties and for us to behave like a
+    // normal vanilla non replicated environment.
+    private static Boolean replicationDisabled = null;
 
     /**
      * isReplicatedSystem - returns details about whether the system is
@@ -39,8 +44,56 @@ public class ReplicationConfiguration {
             return loadApplicationProperties();
         }
 
-        return checkIsReplicatedConfigValid(true);
+        return isReplicationEnabled() && checkIsReplicatedConfigValid(true);
     }
+
+    /**
+     * Indicates if we replication is enabled for this component.
+     * @return (Default:True)
+     *
+     * returns TRUE when replication enabled ( default ).
+      */
+
+    public static boolean isReplicationEnabled(){
+        return !isReplicationDisabled();
+    }
+
+    /**
+     * Indicates if we are to disable replication for this component.
+     * @return (Default:False)
+     * TRUE when replication has been overriden to be disabled in this environment.
+     * Used mainly during installation with a replicated jar, or dev testing currently.
+     */
+    public static boolean isReplicationDisabled(){
+        if (replicationDisabled == null) {
+            replicationDisabled = getOverrideBehaviour(REPLICATION_DISABLED);
+        }
+
+        return replicationDisabled;
+    }
+
+    /**
+     * Utility method to get the system override properties and returns them as a boolean
+     * indicating whether they are enabled / disabled.
+     *
+     * @param overrideName
+     * @return (Default:False)
+     * Returns boolean indicating whether the requested behaviour property has
+     * been found and a value setup for its behaviour.
+     */
+    private static boolean getOverrideBehaviour(String overrideName) {
+
+        // work out system env value first... Note as env is case sensitive and properties usually lower case, we will
+        // use what the client has passed in, but also request toUpper for the environment option JIC.
+        // e.g. 'replication_disabled' the property would be 'REPLICATION_DISABLED' the environment var.
+        String env = System.getenv(overrideName);
+        if ( StringUtils.isEmptyOrNull(env)){
+            // retry with uppercase
+            env = System.getenv(overrideName.toUpperCase());
+        }
+        return Boolean.parseBoolean(System.getProperty(overrideName, env));
+    }
+
 
     /**
      * Check if the cached replicated config can be read, and is still
@@ -163,7 +216,8 @@ public class ReplicationConfiguration {
                 throw new IOException("Could not read " + appPropertiesFile.getAbsolutePath(), e);
             }
         }
-        return checkIsReplicatedConfigValid(false);
+        return isReplicationEnabled() &&
+                checkIsReplicatedConfigValid(false);
     }
 
 

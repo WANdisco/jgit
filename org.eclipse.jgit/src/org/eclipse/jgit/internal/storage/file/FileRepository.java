@@ -335,8 +335,8 @@ public class FileRepository extends Repository {
 
         if (!ReplicationConfiguration.isReplicatedSystem()) {
             //unreplicated deployment fall through due to insufficient settings
-            LOG.debug("Deleted a non-replicated system setup - using replicated Jgit library.\n" +
-                    "Continuing as if non-replicated, please check setup.\n" +
+            LOG.debug("Detected a non-replicated system setup - using replicated Jgit library.\n" +
+                    "Continuing as if non-replicated. If not doing an installation, please check setup.\n" +
                     "Consider using vanilla JGit, or correctly enable replication with this library.");
             unreplicatedCreate(bare);
             return;

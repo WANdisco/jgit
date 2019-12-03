@@ -379,6 +379,17 @@ public final class Constants {
 	/** A bare repository typically ends with this string */
 	public static final String DOT_GIT_EXT = ".git";
 
+	/** WANdisco Replication Settings section. */
+
+	/**
+	 * A replication setting which can override default behaviour of this jar,
+	 * to behave as a non replicated one.
+	 *
+	 * @since 5.1.12-RP
+	 */
+	public static final String REPLICATION_DISABLED = "gerritms_replication_disabled";
+
+
 	/**
 	 * Name of the attributes file
 	 *
