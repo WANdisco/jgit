@@ -5,9 +5,9 @@ infer-out
 bazel-*
 *~
 *.iml
-/.idea
+**/.idea
+**/.ijwb
 *.versionsBackup
 nb-configuration\.xml
 THIRD-PARTY\.properties
-
 NOTICE
