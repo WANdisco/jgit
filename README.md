@@ -1,6 +1,12 @@
+# Replicated JGit Support
+Note this code has been taken as a fork from
+https://github.com/eclipse/jgit.  The fork then has WANdisco replication
+support added to it, and produced to support replicated products such as `Gerrit Multisite`.
+
+For more information see: https://wandisco.com/scm 
+
 Java Git
 ========
-
 An implementation of the Git version control system in pure Java.
 
 This package is licensed under the EDL (Eclipse Distribution
