@@ -577,11 +577,11 @@ public class BatchRefUpdate {
 						case UPDATE:
 						case UPDATE_NONFASTFORWARD:
 							RefUpdate ruu = newUpdate(cmd);
-                                                        if (replicated) {
-                                                          cmd.setResult(ruu.update(walk));
-                                                        } else {
-                                                          cmd.setResult(ruu.unreplicatedUpdate(walk));
-                                                        }
+							if (replicated) {
+								cmd.setResult(ruu.update(walk));
+							} else {
+								cmd.setResult(ruu.unreplicatedUpdate(walk));
+							}
 							
 							break;
 						case CREATE:

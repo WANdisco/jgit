@@ -46,6 +46,7 @@ package org.eclipse.jgit.lib;
 
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.revwalk.RevBlob;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
@@ -695,6 +696,11 @@ public abstract class RefUpdate {
                 } else {
                     return Result.FORCED;
                 }
+            } else if ( newObj instanceof RevBlob && oldObj instanceof RevCommit ){
+                // TODO: trevorg COMPLETE BLOB SUPPORT, we should really work out if its a FAST_FORWARD or a FORCED update.
+                // As this is really only for All-Users refs/sequences updates which are all FORCED updates with no ref-log then
+                // I am assuming forced for now.
+                return Result.FORCED;
             }
             return Result.REJECTED;
 
