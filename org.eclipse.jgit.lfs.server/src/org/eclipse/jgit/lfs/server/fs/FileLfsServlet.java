@@ -137,6 +137,7 @@ public class FileLfsServlet extends HttpServlet {
 					.format(LfsServerText.get().invalidPathInfo, info));
 			return null;
 		}
+
 		try {
 			return LongObjectId.fromString(info.substring(1, length));
 		} catch (InvalidLongObjectIdException e) {
@@ -181,6 +182,9 @@ public class FileLfsServlet extends HttpServlet {
 			rsp.getOutputStream().close();
 			return;
 		}
+		// As we are using toJson by default indicate correct content type, otherwise it could be thought
+		// of as txt.
+		rsp.setContentType("application/json");
 		rsp.reset();
 		rsp.setStatus(status);
 		try (PrintWriter writer = rsp.getWriter()) {
