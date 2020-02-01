@@ -696,7 +696,7 @@ public abstract class RefUpdate {
                 } else {
                     return Result.FORCED;
                 }
-            } else if ( newObj instanceof RevBlob && oldObj instanceof RevCommit ){
+            } else if ( newObj instanceof RevBlob && oldObj instanceof RevBlob ){
                 // TODO: trevorg COMPLETE BLOB SUPPORT, we should really work out if its a FAST_FORWARD or a FORCED update.
                 // As this is really only for All-Users refs/sequences updates which are all FORCED updates with no ref-log then
                 // I am assuming forced for now.
