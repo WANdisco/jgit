@@ -63,7 +63,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
   <groupId>org.eclipse.jgit</groupId>
   <artifactId>org.eclipse.jgit-parent</artifactId>
   <packaging>pom</packaging>
-  <version>5.1.12-WDv1-TC4-SNAPSHOT</version>
+  <version>5.1.12-WDv1-TC5-SNAPSHOT</version>
 
   <name>JGit - Parent</name>
   <url>${jgit-url}</url>
@@ -225,6 +225,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
     <httpcore-version>4.4.10</httpcore-version>
     <slf4j-version>1.7.2</slf4j-version>
     <log4j-version>1.2.15</log4j-version>
+    <gerrit-gitms-version>1.1.0.1-TC12-SNAPSHOT</gerrit-gitms-version>
     <maven-javadoc-plugin-version>3.1.0</maven-javadoc-plugin-version>
     <tycho-extras-version>1.3.0</tycho-extras-version>
     <gson-version>2.8.2</gson-version>
@@ -753,6 +754,18 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
         <groupId>com.google.code.gson</groupId>
         <artifactId>gson</artifactId>
         <version>${gson-version}</version>
+      </dependency>
+
+
+      <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+      really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+      scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
+      NB Changes to this version, should also be replicated in the WORKSPACE file in the root directory for bazel builds.
+       Update  _GERRIT_GITMS_VERSION = "1.1.0.1-TC11-SNAPSHOT"-->
+      <dependency>
+        <groupId>com.wandisco</groupId>
+        <artifactId>gerrit-gitms-interface</artifactId>
+        <version>${gerrit-gitms-version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

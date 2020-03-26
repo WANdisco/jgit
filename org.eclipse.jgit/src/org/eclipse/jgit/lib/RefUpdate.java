@@ -51,24 +51,25 @@ import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.PushCertificate;
-import org.eclipse.jgit.util.GitConfiguration;
 import org.eclipse.jgit.util.ReplicationConfiguration;
-import org.eclipse.jgit.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.charset.Charset;
 import java.text.MessageFormat;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+
+import static org.eclipse.jgit.lib.ReplicatedUpdate.executeReplicatedUpdate;
 
 /**
  * Creates, updates or deletes any reference.
  */
 public abstract class RefUpdate {
+
+    private final static Logger LOG = LoggerFactory.getLogger(RefUpdate.class);
+
     /**
      * Status of an update request.
      * <p>
@@ -183,6 +184,32 @@ public abstract class RefUpdate {
          * @since 4.9
          */
         REJECTED_OTHER_REASON;
+
+        // Allow consumers to create the enum from a string, regardless of case.
+
+        /**
+         * Return enumeration from string representation regardless of case.
+         * @param resultAsString
+         * @return Result
+         */
+        public static Result forValue(String resultAsString) {
+            if (resultAsString == null) {
+                return null;
+            }
+            final String upperValue = resultAsString.toUpperCase();
+            return Result.valueOf(upperValue);
+        }
+
+        /**
+         * allow caller to turn this into a string, for use in REST Queries etc.
+         * Note this is the name of the enum, which may not be the same as the string
+         * representation.  E.g enum WALK(123) may have a toValue name of "walk" but
+         * a toString value of 123.
+         * @return Returns string representation of the name of the enumeration
+         */
+        public String toValue() {
+            return this.name().toLowerCase();
+        }
     }
 
     /**
@@ -250,8 +277,6 @@ public abstract class RefUpdate {
     private boolean detachingSymbolicRef;
 
     private boolean checkConflicting = true;
-
-    private static final boolean logMeEnabled = false;
 
     /**
      * Construct a new update operation for the reference.
@@ -669,44 +694,65 @@ public abstract class RefUpdate {
         requireCanDoUpdate();
 
         if (isReplicatedRepo()) {
-            doReplicatedUpdate();
-            ObjectId replicateOldObjID = getReplicationOldObjectId();
-
-            String name = getName();
-            String oldRef = ObjectId.toString(replicateOldObjID);
-            String nullRef = ObjectId.toString(ObjectId.zeroId());
-            if (name.startsWith("refs/meta/config") || name.startsWith("refs/changes/") || oldRef.equals(nullRef)) {
-                //bug in Gerrit, it does not treat a NO_CHANGE event for
-                // config/change updates
-                //as successful. Easier to workaround it here.
-                return Result.NEW;
+            Result res = doReplicatedUpdate();
+            // Now check the update, and return success / rejected information.
+            // TODO: trevorg
+            //  WORK HERE...
+            //  a check is one thing, but the actual result is already known / returned by the handler in gitresult...
+            if ( res == null ) {
+                return verifyReplicatedUpdate(walk);
             }
 
-            RevObject newObj = null;
-            try {
-                newObj = safeParseNew(walk, newValue);
-            } catch (MissingObjectException e) {
-                return Result.REJECTED_MISSING_OBJECT;
-            }
+            // Now we should be able to just return res as the safe result - the handler did it after all!!
+            // for now just use this for comparison and remove it before final checkin!!
+            // TODO: trevorg remove after testing!!
+            Result verifiedResult = verifyReplicatedUpdate(walk);
 
-            RevObject oldObj = safeParseOld(walk, replicateOldObjID);
-            if (newObj instanceof RevCommit && oldObj instanceof RevCommit) {
-                if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
-                    return Result.FAST_FORWARD;
-                } else {
-                    return Result.FORCED;
-                }
-            } else if ( newObj instanceof RevBlob && oldObj instanceof RevBlob ){
-                // TODO: trevorg COMPLETE BLOB SUPPORT, we should really work out if its a FAST_FORWARD or a FORCED update.
-                // As this is really only for All-Users refs/sequences updates which are all FORCED updates with no ref-log then
-                // I am assuming forced for now.
-                return Result.FORCED;
+            // out of curiosity compare..
+            if ( verifiedResult != res )
+            {
+                LOG.warn("Verified RefUpdate result was: %s but replication result was: %s",
+                         verifiedResult.toString(), res.toString());
             }
-            return Result.REJECTED;
-
         }
 
         return unreplicatedUpdate(walk);
+    }
+
+    private Result verifyReplicatedUpdate(RevWalk walk) throws IOException {
+        ObjectId replicateOldObjID = getReplicationOldObjectId();
+
+        String name = getName();
+        String oldRef = ObjectId.toString(replicateOldObjID);
+        String nullRef = ObjectId.toString(ObjectId.zeroId());
+        if (name.startsWith("refs/meta/config") || name.startsWith("refs/changes/") || oldRef.equals(nullRef)) {
+            //bug in Gerrit, it does not treat a NO_CHANGE event for
+            // config/change updates
+            //as successful. Easier to workaround it here.
+            return Result.NEW;
+        }
+
+        RevObject newObj = null;
+        try {
+            newObj = safeParseNew(walk, newValue);
+        } catch (MissingObjectException e) {
+            return Result.REJECTED_MISSING_OBJECT;
+        }
+
+        RevObject oldObj = safeParseOld(walk, replicateOldObjID);
+        if (newObj instanceof RevCommit && oldObj instanceof RevCommit) {
+            if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
+                return Result.FAST_FORWARD;
+            } else {
+                return Result.FORCED;
+            }
+        } else if ( newObj instanceof RevBlob && oldObj instanceof RevBlob ){
+            // TODO: trevorg COMPLETE BLOB SUPPORT, we should really work out if its a FAST_FORWARD or a FORCED update.
+            // As this is really only for All-Users refs/sequences updates which are all FORCED updates with no ref-log then
+            // I am assuming forced for now.
+            return Result.FORCED;
+        }
+        return Result.REJECTED;
     }
 
     /**
@@ -762,98 +808,6 @@ public abstract class RefUpdate {
         return config.getBoolean("core", "replicated", false);
     }
 
-    /**
-     * Determine the replicated update script to use. The script name can be
-     * defined in the git config.
-     * <p>
-     * The git config file to be used can defined using the GIT_CONFIG
-     * environment
-     * variable, if this is not set the current user's .gitconfig file is used.
-     *
-     * @return The name of the update script including path if it exists in the
-     * git config, the default 'rp-git-update' which should exist on the
-     * path otherwise.
-     * @throws IOException git config could not be read or is incorrect format.
-     */
-    private static String getRpUpdateScript() throws IOException {
-        return GitConfiguration.getAndCheckGitHook("core", null, "rpupdatehook", "rp-git-update");
-    }
-
-    /**
-     * log utility to be used for debug purposes
-     *
-     * @param s String to be logged.
-     */
-    public static void logMe(String s) {
-        if (!logMeEnabled) { return; }
-        try (PrintWriter p = new PrintWriter(new FileWriter("/tmp/gitms.log", true))) {
-            p.println(new Date().toString());
-            p.println(s);
-        } catch (IOException ex) {
-            ex.printStackTrace(System.err);
-        }
-    }
-
-    /**
-     * As per https://jira.wandisco.com/browse/GER-49
-     * Executes a process described in command[], in the workingDir, adding
-     * the envVars variables to the environment.
-     * The output (stdout and stderr) of the process will be available in the
-     * processOutput StringBuilder which must be provided
-     * by the caller. The stderror will be redirected to the stdoutput
-     *
-     * @param command       The command to be executed
-     * @param workingDir    The working dir
-     * @param envVars       The environment variables
-     * @param processOutput a StringBuilder provided by the caller which will
-     *                      contain the process output (stderr and stdout)
-     * @param processStdIn  a String provided by the caller with the stdin info.
-     * @return The return code of the process
-     * @throws IOException
-     */
-    private int execProcess(String[] command, final File workingDir, Map<String, String> envVars, final StringBuilder processOutput,
-                            String processStdIn) throws IOException {
-        ProcessBuilder proBuilder = new ProcessBuilder(command);
-        proBuilder.redirectErrorStream(true);
-        proBuilder.directory(workingDir);
-        Map<String, String> environment = proBuilder.environment();
-        environment.putAll(envVars);
-
-        logMe("Running " + command[0] + ", in " + workingDir + ", input=" + processStdIn);
-        final Process process = proBuilder.start();
-
-        BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream(), Charset.forName("UTF-8")));
-        if (processStdIn != null) {
-            PrintWriter pw = new PrintWriter(new OutputStreamWriter(process.getOutputStream()));
-            pw.println(processStdIn);
-            pw.close();
-        }
-        String line;
-        String newLine = System.getProperty("line.separator");
-        processOutput.append(newLine);
-        try {
-            while ((line = br.readLine()) != null) {
-                processOutput.append(line).append(newLine);
-            }
-        } catch (IOException e) {
-            processOutput.append("[Caught IOException: ").append(e.getMessage());
-            int processReturnCode = 0;
-            try {
-                processReturnCode = process.waitFor();
-            } catch (InterruptedException ignored) {
-            }
-            processOutput.append(", return code=").append(processReturnCode).append("]");
-            throw new IOException(processOutput.toString(), e);
-        }
-
-        int returnCode = -1;
-        try {
-            returnCode = process.waitFor();
-        } catch (InterruptedException ex) {
-        }
-        return returnCode;
-
-    }
 
     private static final ThreadLocal<String> username = new ThreadLocal<String>();
 
@@ -866,38 +820,33 @@ public abstract class RefUpdate {
         username.set(user);
     }
 
-    private void doReplicatedUpdate() throws IOException {
+    private Result doReplicatedUpdate() throws IOException {
+        // This has to happen first, as we clear the username to null so that each new request is clean.
+        // IF an exception happened we could end up with non authenticated calls using old stale information here.
         String user = username.get();
         setUsername(null);
-        String fsPath = getRepository().getDirectory().getAbsolutePath();
-        String oldRev = ObjectId.toString(getReplicationOldObjectId());
-        String newRev = ObjectId.toString(getNewObjectId());
-        String[] commandUpdate = {getRpUpdateScript(), getName(), oldRev, newRev};
+        final String fsPath = getRepository().getDirectory().getAbsolutePath();
+        final ObjectId oldRev = getReplicationOldObjectId();
+        final ObjectId newRev = getNewObjectId();
+        final String refName = getName();
 
-        StringBuilder processOutput = new StringBuilder("Failure to replicate update.");
-        Map<String, String> environment = new HashMap<>();
-        environment.put("GIT_DIR", ".");
-        if (!StringUtils.isEmptyOrNull(user)) {
-            environment.put("ACP_USER", user);
-        }
-
+        final File refFile = new File(fsPath, refName);
         //get the lastModified for the ref prior to the update
-        final File refFile = new File(fsPath, getName());
         final long oldLastModified = refFile.lastModified();
 
-        // this call will block until the update has happened on the local node
-        int returnCode = execProcess(commandUpdate, new File(fsPath), environment, processOutput, null);
-
-        if (returnCode != 0) {
-            throw new IOException(processOutput.toString());
-        }
+        // This result is not always available currently. As the rp-git-update script returns only 0 for OK, we later
+        // use a verification approach to find out what we did.  So we can support null behaviour here for now...
+        Result res = executeReplicatedUpdate(user, fsPath, oldRev, newRev, refName, getRepository());
 
         // force a reload of the ref if the lastModified is within 2.5 seconds of
         // the last time a push was made to the same ref.
         if (refFile.lastModified() - oldLastModified <= 2500) {
             getRefDatabase().getRef(getName());
         }
+
+        return res;
     }
+
 
     private boolean canDelete() throws IOException {
         final String myName = detachingSymbolicRef
@@ -933,6 +882,7 @@ public abstract class RefUpdate {
             }
 
             doReplicatedUpdate();
+            // no_change indicates success for a delete...
             return Result.NO_CHANGE;
         }
 

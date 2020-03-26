@@ -79,6 +79,8 @@ import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.PushCertificate;
 import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.util.time.ProposedTimestamp;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Batch of reference updates to be applied to a repository.
@@ -117,8 +119,8 @@ public class BatchRefUpdate {
 	/** Should the result value be appended to {@link #refLogMessage}. */
 	private boolean refLogIncludeResult;
         
-        /** Should the update be replicated. */
-        private boolean replicated = true;
+	/** Should the update be replicated. */
+	private boolean replicated = true;
 
 	/**
 	 * Should reflogs be written even if the configured default for this ref is
@@ -137,6 +139,11 @@ public class BatchRefUpdate {
 
 	/** Associated timestamps that should be blocked on before update. */
 	private List<ProposedTimestamp> timestamps;
+
+	/**
+	 * Logger...
+	 */
+	private static final Logger logger = LoggerFactory.getLogger(BatchRefUpdate.class);
 
 	/**
 	 * Initialize a new batch update.
@@ -557,7 +564,24 @@ public class BatchRefUpdate {
 								err.getMessage()));
 			}
 		}
+
+		// TODO: trevorg look at batch ref update, it looks like we are splitting apart the operations here
+		// and firing them out one at a time... When this is meant as an atomic all or nothing operation we could easily
+		// have got 2 of 3 done.... and not roll back.... This should be a new proposal...!!  See packedbatchrefupdate.
+		// So its critical to work out if we have more than 1 command here,
+		// also note phase 1 delete could have added to this.. ARG!!
 		if (!commands2.isEmpty()) {
+
+			// commands 2 is only for update commands, delete isn't added to commands2...=
+			if ( commands2.size() > 1 ){
+				// Do a hard system.out.println... This isn't for permanent use in the product,
+				// but very handy for our tests and to catch my eye!!!
+				// TODO: trevorg remove, and sort this logging.
+				System.err.println("TODO: trevorg - Commands are:"  + commands2.toString());
+				logger.warn("TODO: trevorg - ATOMIC OPERATIONS SUPPORT CHECK!!");
+				logger.info("Commands are: " + commands2.toString());
+			}
+
 			// What part of the name space is already taken
 			Collection<String> takenNames = refdb.getRefs().stream()
 					.map(Ref::getName)

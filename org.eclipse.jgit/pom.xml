@@ -53,7 +53,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>5.1.12-WDv1-TC4-SNAPSHOT</version>
+    <version>5.1.12-WDv1-TC5-SNAPSHOT</version>
   </parent>
 
   <artifactId>org.eclipse.jgit</artifactId>
@@ -90,6 +90,16 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
+      <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+      really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+      scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
+      NB Changes to this version, should also be replicated in the WORKSPACE file in the root directory for bazel builds.
+       Update  _GERRIT_GITMS_VERSION = "1.1.0.1-TC11-SNAPSHOT"-->
+      <dependency>
+          <groupId>com.wandisco</groupId>
+          <artifactId>gerrit-gitms-interface</artifactId>
+          <scope>provided</scope>
+      </dependency>
   </dependencies>
 
   <build>

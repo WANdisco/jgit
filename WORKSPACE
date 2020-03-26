@@ -20,6 +20,12 @@ load_bazlets(commit = "09a035e98077dce549d5f6a7472d06c4b8f792d2")
 load(
     "@com_googlesource_gerrit_bazlets//tools:maven_jar.bzl",
     "maven_jar",
+    "MAVEN_LOCAL"
+)
+
+load(
+    "//tools:maven_custom.bzl",
+    "WANDISCO_ASSETS"
 )
 
 maven_jar(
@@ -35,9 +41,8 @@ maven_jar(
 )
 
 # WANdisco maven assets
-# TREV TODO check how to make this provided scope in LFS server?
-_GERRIT_GITMS_VERSION = "1.1.0.1-TC1"
-WANDISCO_ASSETS = "WANDISCO:"
+# TODO: check how to make this provided scope in LFS server same as we do in POM.xml
+_GERRIT_GITMS_VERSION = "1.1.0.1-TC12-SNAPSHOT"
 
 maven_jar(
     name = "gerrit-gitms-interface",

@@ -81,7 +81,21 @@ public class ReplicationConfiguration {
      * Returns boolean indicating whether the requested behaviour property has
      * been found and a value setup for its behaviour.
      */
-    private static boolean getOverrideBehaviour(String overrideName) {
+    public static boolean getOverrideBehaviour(String overrideName) {
+
+        return getOverrideBehaviour(overrideName, null);
+    }
+
+    /**
+     * Utility method to get the system override properties and returns them as a boolean
+     * indicating whether they are enabled / disabled.
+     *
+     * @param overrideName
+     * @param defaultValue
+     * @return Returns boolean indicating whether the requested behaviour property has
+     * been found and a value setup for its behaviour.  Default value is used if no property is found.
+     */
+    public static boolean getOverrideBehaviour(String overrideName, Boolean defaultValue) {
 
         // work out system env value first... Note as env is case sensitive and properties usually lower case, we will
         // use what the client has passed in, but also request toUpper for the environment option JIC.
@@ -91,9 +105,15 @@ public class ReplicationConfiguration {
             // retry with uppercase
             env = System.getenv(overrideName.toUpperCase());
         }
+
+        // if we have no env value found, and there has been a default specified, lets use its value now.
+        if ( StringUtils.isEmptyOrNull(env) &&  (defaultValue != null) ){
+            return defaultValue;
+        }
+
+        // Otherwise we have a value, lets turn it back to a boolean from a String for ease of use.
         return Boolean.parseBoolean(System.getProperty(overrideName, env));
     }
-
 
     /**
      * Check if the cached replicated config can be read, and is still
