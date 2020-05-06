@@ -100,19 +100,38 @@ public class ReplicationConfiguration {
         // work out system env value first... Note as env is case sensitive and properties usually lower case, we will
         // use what the client has passed in, but also request toUpper for the environment option JIC.
         // e.g. 'replication_disabled' the property would be 'REPLICATION_DISABLED' the environment var.
-        String env = System.getenv(overrideName);
-        if ( StringUtils.isEmptyOrNull(env)){
+        String val = System.getenv(overrideName);
+        if ( StringUtils.isEmptyOrNull(val)){
             // retry with uppercase
-            env = System.getenv(overrideName.toUpperCase());
+            val = System.getenv(overrideName.toUpperCase());
         }
 
-        // if we have no env value found, and there has been a default specified, lets use its value now.
-        if ( StringUtils.isEmptyOrNull(env) &&  (defaultValue != null) ){
-            return defaultValue;
+        // if we have found a value - return it now for env...
+        if ( !StringUtils.isEmptyOrNull(val) ){
+            return Boolean.parseBoolean(val);
         }
 
-        // Otherwise we have a value, lets turn it back to a boolean from a String for ease of use.
-        return Boolean.parseBoolean(System.getProperty(overrideName, env));
+        // Otherwise we dont have an env value, so lets check again in the properties, otherwise its use the default
+        // value
+        // Finally convert boolean from a String for ease of use.
+        val = System.getProperty(overrideName);
+
+        if ( StringUtils.isEmptyOrNull(val)){
+            // retry with uppercase
+            val = System.getProperty(overrideName.toUpperCase());
+        }
+
+        // If we got the value from the property list - use it now...
+        if ( !StringUtils.isEmptyOrNull(val)){
+            return Boolean.parseBoolean(val);
+        }
+
+        // finally not values - just return the default given.
+        if ( defaultValue == null ){
+            return false;
+        }
+
+        return defaultValue;
     }
 
     /**

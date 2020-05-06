@@ -118,9 +118,9 @@ public class BatchRefUpdate {
 
 	/** Should the result value be appended to {@link #refLogMessage}. */
 	private boolean refLogIncludeResult;
-        
+
 	/** Should the update be replicated. */
-	private boolean replicated = true;
+	protected boolean replicated = true;
 
 	/**
 	 * Should reflogs be written even if the configured default for this ref is
@@ -622,11 +622,11 @@ public class BatchRefUpdate {
 							ru.setCheckConflicting(false);
 							takenPrefixes.addAll(getPrefixes(cmd.getRefName()));
 							takenNames.add(cmd.getRefName());
-                                                        if (replicated) {
-                                                          cmd.setResult(ru.update(walk));
-                                                        } else {
-                                                          cmd.setResult(ru.unreplicatedUpdate(walk));
-                                                        }
+							if (replicated) {
+							  cmd.setResult(ru.update(walk));
+							} else {
+							  cmd.setResult(ru.unreplicatedUpdate(walk));
+							}
 						}
 					}
 				} catch (IOException err) {

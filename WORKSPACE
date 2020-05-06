@@ -42,12 +42,13 @@ maven_jar(
 
 # WANdisco maven assets
 # TODO: check how to make this provided scope in LFS server same as we do in POM.xml
-_GERRIT_GITMS_VERSION = "1.1.0.1-TC12-SNAPSHOT"
+_GERRIT_GITMS_VERSION = "1.1.0.1-TC13-SNAPSHOT"
 
 maven_jar(
     name = "gerrit-gitms-interface",
     artifact = "com.wandisco:gerrit-gitms-interface:" + _GERRIT_GITMS_VERSION,
     repository = WANDISCO_ASSETS,
+#    repository = MAVEN_LOCAL,
     #    sha1 = 213e4234
 )
 

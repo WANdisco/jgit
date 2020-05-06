@@ -40,7 +40,6 @@ public class ReplicatedUpdate {
      * @param refName
      * @param repo
      * @return RefUpdate result of the update operation.
-     *
      * @throws IOException
      */
     public static RefUpdate.Result executeReplicatedUpdate(final String user, final String fsPath,
@@ -51,13 +50,16 @@ public class ReplicatedUpdate {
             // use the new in process gitupdate, which does the verification here using jgit, and makes
             // the update call via http directly.
             GitUpdateRequest gitUpdateRequest =
-                    PackUtils.executePackfileGenerationBeforeReplicationUpdateInProcess(refName, oldRevId, newRevId, user,
-                                                                                        fsPath, repo);
+                    PackUtils
+                            .executePackfileGenerationBeforeReplicationUpdateInProcess(refName, oldRevId, newRevId,
+                                                                                       user,
+                                                                                       fsPath, repo);
             try {
                 GitUpdateResult result = GitUpdateAccessor.updateRepository(gitUpdateRequest);
 
-                if ( result == null ){
-                    logMe("Unable to find a GitUpdateResult to the update repository call: " + gitUpdateRequest.toString());
+                if (result == null) {
+                    logMe("Unable to find a GitUpdateResult to the update repository call: " +
+                          gitUpdateRequest.toString());
                     return null;
                 }
 
@@ -156,6 +158,82 @@ public class ReplicatedUpdate {
 
         GitUpdateRequest result = ObjectUtils.createObjectFromJson(json, GitUpdateRequest.class);
         return result;
+    }
+
+    /**
+     * Entrypoint to do the replicated update of a batch request.
+     *
+     * @param user
+     * @param fsPath
+     * @param updateRequestList
+     * @param repo
+     * @return BatchGitUpdateRequestResult a result with the update results of each item in the batch, and an overal
+     * result member.
+     * @throws IOException
+     */
+    public static BatchGitUpdateResult executeBatchReplicatedUpdate(final String user,
+                                                                    final String fsPath,
+                                                                    final BatchGitUpdateRequestsList updateRequestList,
+                                                                    final Repository repo)
+            throws IOException {
+
+        BatchGitUpdateRequestsList updateRequestsWithPackfiles = new BatchGitUpdateRequestsList();
+
+        // Get me a real GitUpdateRequest with the real packfile generated for each item here
+        for (GitUpdateRequest singleUpdate : updateRequestList) {
+            // Get an updated request object.... This will contain the packfile object name generated and the final
+            // GitUpdateRequest to be issued for this command.
+            try {
+                GitUpdateRequest gitUpdateRequest;
+
+                if (!useRPGitUpdateScript) {
+                    // use the new in process gitupdate, which does the verification here using jgit, and makes
+                    // the update verification inprocess along with packfile generation.
+                    gitUpdateRequest =
+                            PackUtils
+                                    .executePackfileGenerationBeforeReplicationUpdateInProcess(singleUpdate.getRefName(),
+                                                                                               ObjectId.fromString(singleUpdate.getOldRev()),
+                                                                                               ObjectId.fromString(singleUpdate.getNewRev()),
+                                                                                               singleUpdate.getUserid(),
+                                                                                               singleUpdate.getGitDir(),
+                                                                                               repo);
+                }
+                else {
+                    gitUpdateRequest = executePackfileGenerationBeforeReplicatingUpdate(singleUpdate.getUserid(),
+                                                                                        singleUpdate.getGitDir(),
+                                                                                        singleUpdate.getOldRev(),
+                                                                                        singleUpdate.getNewRev(),
+                                                                                        singleUpdate.getRefName());
+                }
+
+                // now add result to our batch...
+                updateRequestsWithPackfiles.add(gitUpdateRequest);
+            } catch (IOException e) {
+                // Unable to get this items packfile generated.  Either a real IOException on disk, or
+                // Something has failed validation.. Log details and throw.
+                logMe(String.format("Failed to generate part of a batch update request: %s.  Error Details: %s",
+                                    singleUpdate.toString(),
+                                    e.getMessage()));
+                throw e;
+            }
+        }
+
+        // Create the final BatchRequest and issue it to the GitMS Delegate.
+        BatchGitUpdateRequest batchGitUpdateRequest = new BatchGitUpdateRequest(fsPath, user,
+                                                                                updateRequestsWithPackfiles);
+
+        try {
+            BatchGitUpdateResult result = BatchGitUpdateAccessor.updateRepository(batchGitUpdateRequest);
+            if (result == null) {
+                logMe("Unable to find a BatchGitUpdateResult to the update repository call: " +
+                      batchGitUpdateRequest.toString());
+                return null;
+            }
+            return result;
+        } catch (Exception e) {
+            // update repository return an IOException instead of a GitUpdateResult....
+            throw new IOException(e);
+        }
     }
 
     /**
@@ -270,7 +348,7 @@ public class ReplicatedUpdate {
         try (PrintWriter p = new PrintWriter(new FileWriter("/tmp/gitms.log", true))) {
             p.println(new Date().toString());
             p.println(s);
-            if ( e != null ) {
+            if (e != null) {
                 p.println(e);
             }
         } catch (IOException ex) {

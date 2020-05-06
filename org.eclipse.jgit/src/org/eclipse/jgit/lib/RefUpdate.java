@@ -714,6 +714,8 @@ public abstract class RefUpdate {
                 LOG.warn("Verified RefUpdate result was: %s but replication result was: %s",
                          verifiedResult.toString(), res.toString());
             }
+
+            return verifiedResult;
         }
 
         return unreplicatedUpdate(walk);
@@ -803,11 +805,23 @@ public abstract class RefUpdate {
         }
     }
 
-    private boolean isReplicatedRepo() {
-        StoredConfig config = getRepository().getConfig();
-        return config.getBoolean("core", "replicated", false);
+    /**
+     * Expose whether this is a replicated repo or not.
+     * @return True if replicated
+     */
+    public boolean isReplicatedRepo() {
+        return isReplicatedRepo(getRepository());
     }
 
+    /**
+     * Expose whether the supplied repo is a replicated repo or not.
+     * @param repository  ( Repository to be tested )
+     * @return True if replicated
+     */
+    public static boolean isReplicatedRepo(Repository repository) {
+        StoredConfig config = repository.getConfig();
+        return config.getBoolean("core", "replicated", false);
+    }
 
     private static final ThreadLocal<String> username = new ThreadLocal<String>();
 
@@ -1043,12 +1057,24 @@ public abstract class RefUpdate {
             // itself. Otherwise, we will update the leaf reference, which should be
             // an ObjectIdRef.
             if (!tryLock(!detachingSymbolicRef)) {
+                // Before we give up, we could be trying to lock a leaf node which is already in the final state and
+                // already updated... Idempotent check...
+                if ( checkIsInFinalStateAlready(walk) ) {
+                    return store.execute(Result.NO_CHANGE);
+                }
                 return Result.LOCK_FAILURE;
             }
             if (expValue != null) {
                 final ObjectId o;
                 o = oldValue != null ? oldValue : ObjectId.zeroId();
                 if (!AnyObjectId.equals(expValue, o)) {
+                    // Before we give up, we could be trying to update a repo which has already been updated...
+                    // Look below without locking it already deals with this case - so mirroring it for locking.
+                    // Idempotent check...
+                    if ( checkIsInFinalStateAlready(walk) ) {
+                        return store.execute(Result.NO_CHANGE);
+                    }
+
                     return Result.LOCK_FAILURE;
                 }
             }
@@ -1081,6 +1107,40 @@ public abstract class RefUpdate {
         } finally {
             unlock();
         }
+    }
+
+    /**
+     *  Before giving up with lock failure allow idompotent operations
+     *  to indicate success / no change if we are already in the final state. This used to happen
+     *  before expValue locking, so allowing this ot continue, otherwise retries could fail that
+     *  should succeed.
+     * @param walk - Walk information for this repository operation.
+     * @return TRUE - indicates in final state already so current repo state matches new state
+     * @throws IOException
+     */
+    private boolean checkIsInFinalStateAlready(final RevWalk walk) throws IOException {
+        RevObject newObj;
+        RevObject oldObj;
+
+        // newValue is the state to change the repo to.
+        try {
+            newObj = safeParseNew(walk, newValue);
+        } catch (MissingObjectException e) {
+            return false;
+        }
+
+        // Old value if we obtained it means we just loaded this from the repo and its the current state.
+        // No current state of repo is thats its new and never existed before now, so either its not already in that
+        // state or it was a delete operation and wouldn't be calling into newUpdate to get to this check.
+        if (oldValue != null) {
+            // we dont need to deal with DELETES as this is updateImpl not delete
+            oldObj = safeParseOld(walk, oldValue);
+            if (newObj == oldObj && !detachingSymbolicRef) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
