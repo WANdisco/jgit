@@ -507,6 +507,9 @@ public class BatchRefUpdate {
 	public void execute(RevWalk walk, ProgressMonitor monitor,
 			List<String> options) throws IOException {
 
+		// get the username for this thread context before we do anything else.
+		String user = RefUpdate.getUsernameAndClear();
+
 		if (atomic && !refdb.performsAtomicTransactions()) {
 			for (ReceiveCommand c : commands) {
 				if (c.getResult() == NOT_ATTEMPTED) {
@@ -527,9 +530,17 @@ public class BatchRefUpdate {
 		monitor.beginTask(JGitText.get().updatingReferences, commands.size());
 		List<ReceiveCommand> commands2 = new ArrayList<>(
 				commands.size());
+
 		// First delete refs. This may free the name space for some of the
 		// updates.
 		for (ReceiveCommand cmd : commands) {
+			// regardless of the command being issued, if we have been given a username, we better make it
+			// available for each sub command being issued, otherwise it would be lost after the first command as
+			// its cleared...
+			if ( user != null ){
+				RefUpdate.setUsername(user);
+			}
+
 			try {
 				if (cmd.getResult() == NOT_ATTEMPTED) {
 					if (isMissing(walk, cmd.getOldId())
@@ -574,6 +585,10 @@ public class BatchRefUpdate {
 
 			// commands 2 is only for update commands, delete isn't added to commands2...=
 			if ( commands2.size() > 1 ){
+
+				// TODO: trevorg Check this, as this route of issueing a Batch does not look to be doing so in an any atomic
+				//  fashion...
+
 				// Do a hard system.out.println... This isn't for permanent use in the product,
 				// but very handy for our tests and to catch my eye!!!
 				// TODO: trevorg remove, and sort this logging.
@@ -590,6 +605,13 @@ public class BatchRefUpdate {
 
 			// Now to the update that may require more room in the name space
 			for (ReceiveCommand cmd : commands2) {
+				// regardless of the command being issued, if we have been given a username, we better make it
+				// available for each sub command being issued, otherwise it would be lost after the first command as
+				// its cleared...
+				if ( user != null ){
+					RefUpdate.setUsername(user);
+				}
+
 				try {
 					if (cmd.getResult() == NOT_ATTEMPTED) {
 						cmd.updateType(walk);
@@ -600,11 +622,10 @@ public class BatchRefUpdate {
 							break;
 						case UPDATE:
 						case UPDATE_NONFASTFORWARD:
-							RefUpdate ruu = newUpdate(cmd);
 							if (replicated) {
-								cmd.setResult(ruu.update(walk));
+								cmd.setResult(ru.update(walk));
 							} else {
-								cmd.setResult(ruu.unreplicatedUpdate(walk));
+								cmd.setResult(ru.unreplicatedUpdate(walk));
 							}
 							
 							break;

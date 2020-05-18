@@ -61,7 +61,8 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
 
-import static org.eclipse.jgit.lib.ReplicatedUpdate.executeReplicatedUpdate;
+import static org.eclipse.jgit.lib.ReplicatedUpdate.replicateUpdate;
+import static org.eclipse.jgit.util.ReplicationConfiguration.shouldReplicateRepository;
 
 /**
  * Creates, updates or deletes any reference.
@@ -693,7 +694,7 @@ public abstract class RefUpdate {
     public Result update(final RevWalk walk) throws IOException {
         requireCanDoUpdate();
 
-        if (isReplicatedRepo()) {
+        if (shouldReplicateRepository(getRepository())) {
             Result res = doReplicatedUpdate();
             // Now check the update, and return success / rejected information.
             // TODO: trevorg
@@ -805,28 +806,14 @@ public abstract class RefUpdate {
         }
     }
 
-    /**
-     * Expose whether this is a replicated repo or not.
-     * @return True if replicated
-     */
-    public boolean isReplicatedRepo() {
-        return isReplicatedRepo(getRepository());
-    }
-
-    /**
-     * Expose whether the supplied repo is a replicated repo or not.
-     * @param repository  ( Repository to be tested )
-     * @return True if replicated
-     */
-    public static boolean isReplicatedRepo(Repository repository) {
-        StoredConfig config = repository.getConfig();
-        return config.getBoolean("core", "replicated", false);
-    }
-
+    // The username context is going to be shared across refUpdates and batchRefupdates...
+    // To avoid us having to keep 2 versions of this, and potentially only one being used, and then how do we clear
+    // the other.. I am using this general RefUpdate username, for both single updates and batches of updates.
     private static final ThreadLocal<String> username = new ThreadLocal<String>();
 
     /**
      * Set the username information.
+     * The username is set in a TLS to be thread safe for multi threaded parallel calls.
      *
      * @param user
      */
@@ -834,11 +821,23 @@ public abstract class RefUpdate {
         username.set(user);
     }
 
-    private Result doReplicatedUpdate() throws IOException {
-        // This has to happen first, as we clear the username to null so that each new request is clean.
-        // IF an exception happened we could end up with non authenticated calls using old stale information here.
+    /**
+     * This has to happen first, in any ref update / packed batch ref update call.
+     * This is so we can clear out the username in this thread context before we go any further.. This prevents us
+     * leaving stale username data, ensuring that each new request is clean.
+     * IF an exception happened we could end up with non authenticated calls using old stale information.
+     *
+     * @return String which is the username set or null.
+     */
+    public static String getUsernameAndClear() {
+
         String user = username.get();
         setUsername(null);
+        return user;
+    }
+
+    private Result doReplicatedUpdate() throws IOException {
+        String user = getUsernameAndClear();
         final String fsPath = getRepository().getDirectory().getAbsolutePath();
         final ObjectId oldRev = getReplicationOldObjectId();
         final ObjectId newRev = getNewObjectId();
@@ -850,7 +849,7 @@ public abstract class RefUpdate {
 
         // This result is not always available currently. As the rp-git-update script returns only 0 for OK, we later
         // use a verification approach to find out what we did.  So we can support null behaviour here for now...
-        Result res = executeReplicatedUpdate(user, fsPath, oldRev, newRev, refName, getRepository());
+        Result res = replicateUpdate(user, fsPath, oldRev, newRev, refName, getRepository());
 
         // force a reload of the ref if the lastModified is within 2.5 seconds of
         // the last time a push was made to the same ref.
@@ -889,7 +888,7 @@ public abstract class RefUpdate {
      */
     public Result delete(final RevWalk walk) throws IOException {
 
-        if (isReplicatedRepo()) {
+        if (shouldReplicateRepository(getRepository())) {
             if (!canDelete()) {
                 result = Result.REJECTED_CURRENT_BRANCH;
                 return result;
@@ -1013,7 +1012,7 @@ public abstract class RefUpdate {
             throw new IllegalArgumentException(MessageFormat.format(JGitText.get().illegalArgumentNotA, Constants.R_REFS));
         }
 
-        if (isReplicatedRepo() && ReplicationConfiguration.isReplicatedSystem()) {
+        if (shouldReplicateRepository(getRepository())) {
 
             String port = ReplicationConfiguration.getPort();
 

@@ -4,10 +4,15 @@ import com.wandisco.gerrit.gitms.shared.api.exceptions.GitUpdateException;
 import com.wandisco.gerrit.gitms.shared.api.repository.*;
 import com.wandisco.gerrit.gitms.shared.util.ObjectUtils;
 import com.wandisco.gerrit.gitms.shared.util.PackUtils;
+import org.eclipse.jgit.errors.RepositoryAlreadyExistsException;
 import org.eclipse.jgit.util.GitConfiguration;
+import org.eclipse.jgit.util.ReplicationConfiguration;
 import org.eclipse.jgit.util.StringUtils;
 
 import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.util.Date;
 import java.util.HashMap;
@@ -42,9 +47,9 @@ public class ReplicatedUpdate {
      * @return RefUpdate result of the update operation.
      * @throws IOException
      */
-    public static RefUpdate.Result executeReplicatedUpdate(final String user, final String fsPath,
-                                                           final ObjectId oldRevId, final ObjectId newRevId,
-                                                           final String refName, final Repository repo) throws
+    public static RefUpdate.Result replicateUpdate(final String user, final String fsPath,
+                                                   final ObjectId oldRevId, final ObjectId newRevId,
+                                                   final String refName, final Repository repo) throws
             IOException {
         if (!useRPGitUpdateScript) {
             // use the new in process gitupdate, which does the verification here using jgit, and makes
@@ -77,7 +82,7 @@ public class ReplicatedUpdate {
         // work / creation of packfile / verification and replication call.
         final String oldRev = ObjectId.toString(oldRevId);
         final String newRev = ObjectId.toString(newRevId);
-        executeReplicatedUpdateOutOfProcess(user, fsPath, oldRev, newRev, refName);
+        replicateUpdateOutOfProcess(user, fsPath, oldRev, newRev, refName);
         return null;
     }
 
@@ -92,9 +97,9 @@ public class ReplicatedUpdate {
      * @param refName
      * @throws IOException
      */
-    private static void executeReplicatedUpdateOutOfProcess(final String user, final String fsPath,
-                                                            final String oldRev, final String newRev,
-                                                            final String refName) throws IOException {
+    private static void replicateUpdateOutOfProcess(final String user, final String fsPath,
+                                                    final String oldRev, final String newRev,
+                                                    final String refName) throws IOException {
         String[] commandUpdate = {getRpUpdateScript(), refName, oldRev, newRev};
 
         StringBuilder processOutput = new StringBuilder();
@@ -126,11 +131,11 @@ public class ReplicatedUpdate {
      * request.
      * @throws IOException
      */
-    public static GitUpdateRequest executePackfileGenerationBeforeReplicatingUpdate(final String user,
-                                                                                    final String fsPath,
-                                                                                    final String oldRev,
-                                                                                    final String newRev,
-                                                                                    final String refName) throws
+    public static GitUpdateRequest generatePackfilesRequiredForUpdate(final String user,
+                                                                      final String fsPath,
+                                                                      final String oldRev,
+                                                                      final String newRev,
+                                                                      final String refName) throws
             IOException {
         String[] commandUpdate = {getRpUpdateScript(), "-r", refName, oldRev, newRev};
 
@@ -171,10 +176,10 @@ public class ReplicatedUpdate {
      * result member.
      * @throws IOException
      */
-    public static BatchGitUpdateResult executeBatchReplicatedUpdate(final String user,
-                                                                    final String fsPath,
-                                                                    final BatchGitUpdateRequestsList updateRequestList,
-                                                                    final Repository repo)
+    public static BatchGitUpdateResult replicatedBatchUpdate(final String user,
+                                                             final String fsPath,
+                                                             final BatchGitUpdateRequestsList updateRequestList,
+                                                             final Repository repo)
             throws IOException {
 
         BatchGitUpdateRequestsList updateRequestsWithPackfiles = new BatchGitUpdateRequestsList();
@@ -199,11 +204,11 @@ public class ReplicatedUpdate {
                                                                                                repo);
                 }
                 else {
-                    gitUpdateRequest = executePackfileGenerationBeforeReplicatingUpdate(singleUpdate.getUserid(),
-                                                                                        singleUpdate.getGitDir(),
-                                                                                        singleUpdate.getOldRev(),
-                                                                                        singleUpdate.getNewRev(),
-                                                                                        singleUpdate.getRefName());
+                    gitUpdateRequest = generatePackfilesRequiredForUpdate(singleUpdate.getUserid(),
+                                                                          singleUpdate.getGitDir(),
+                                                                          singleUpdate.getOldRev(),
+                                                                          singleUpdate.getNewRev(),
+                                                                          singleUpdate.getRefName());
                 }
 
                 // now add result to our batch...
@@ -218,8 +223,13 @@ public class ReplicatedUpdate {
             }
         }
 
+        // TODO: trevorg enforce using same user for entire batch, phase1, needs it on all child commands, but really
+        // when atomic it should use this for all!!
+        final String batchUser = StringUtils.isEmptyOrNull(user) ? PackUtils.getDefaultUsername() : user;
+
         // Create the final BatchRequest and issue it to the GitMS Delegate.
-        BatchGitUpdateRequest batchGitUpdateRequest = new BatchGitUpdateRequest(fsPath, user,
+        BatchGitUpdateRequest batchGitUpdateRequest = new BatchGitUpdateRequest(fsPath,
+                                                                                batchUser,
                                                                                 updateRequestsWithPackfiles);
 
         try {
@@ -228,11 +238,77 @@ public class ReplicatedUpdate {
                 logMe("Unable to find a BatchGitUpdateResult to the update repository call: " +
                       batchGitUpdateRequest.toString());
                 return null;
+
             }
             return result;
         } catch (Exception e) {
             // update repository return an IOException instead of a GitUpdateResult....
             throw new IOException(e);
+        }
+    }
+
+    /**
+     * replicatedCreate allows for the creation of a repository on all replicated nodes.  this not only
+     * creates the repo but also adds it to the list of governed repos by GitMS.
+     * @param absolutePath
+     * @throws IOException
+     */
+    public static void replicatedCreate(String absolutePath) throws IOException {
+        String port = ReplicationConfiguration.getPort();
+        String timeout = ReplicationConfiguration.getRepoDeployTimeout();
+        String repoPath = null;
+
+        if (port == null || port.isEmpty()) {
+            throw new IOException("Invalid Replication Setup - no replication port currently configured.");
+        }
+
+        try {
+            repoPath = URLEncoder.encode(absolutePath, "UTF-8");
+            URL url = new URL("http://127.0.0.1:" + port + "/gerrit/deploy?"
+                              + "timeout=" + timeout + "&repoPath=" + repoPath);
+            HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
+            httpCon.setDoOutput(true);
+            httpCon.setUseCaches(false);
+            httpCon.setRequestMethod("PUT");
+            httpCon.setRequestProperty("Content-Type", "application/xml");
+            httpCon.setRequestProperty("Accept", "application/xml");
+            int response = httpCon.getResponseCode();
+
+            //an error may have happened, and if it did, the errorstream will be available
+            //to get more details - but if repo deployment was successful, getErrorStream
+            //will be null
+            StringBuilder responseString = new StringBuilder();
+            if (httpCon.getErrorStream() != null) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(httpCon.getErrorStream()))) {
+
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        responseString.append(line);
+                        responseString.append(System.lineSeparator());
+                    }
+                }
+            }
+
+            httpCon.disconnect();
+
+            if (response == 412) {
+                // there has been a problem with the deployment
+                throw new RepositoryAlreadyExistsException(
+                        "Failure to create the git repository on the GitMS Replicator, response code: "
+                        + response + "Replicator response: "
+                        + responseString.toString());
+            }
+
+            if (response != 200) {
+                //there has been a problem with the deployment
+                throw new IOException("Failure to create the git repository on the GitMS Replicator, response code: " + response
+                                      + "Replicator response: " + responseString.toString());
+            }
+
+        } catch (RepositoryAlreadyExistsException ex) {
+            throw ex;
+        } catch (IOException ex) {
+            throw new IOException("Error with deploying repo: " + ex.toString());
         }
     }
 

@@ -1,5 +1,8 @@
 package org.eclipse.jgit.util;
 
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.lib.StoredConfig;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -40,11 +43,18 @@ public class ReplicationConfiguration {
      * @throws IOException
      */
     public static boolean isReplicatedSystem() throws IOException {
+        // Before we look near the replication configuration and potentially throw an error....
+        // Check if the system has had replication disabled.
+        if ( isReplicationDisabled() ) {
+            return false;
+        }
+
+        // Otherwise we can continue now and check rest of replication state/config.
         if (appPropertiesFile == null) {
             return loadApplicationProperties();
         }
 
-        return isReplicationEnabled() && checkIsReplicatedConfigValid(true);
+        return checkIsReplicatedConfigValid(true);
     }
 
     /**
@@ -70,6 +80,37 @@ public class ReplicationConfiguration {
         }
 
         return replicationDisabled;
+    }
+
+    /**
+     * Expose whether the supplied repo is a replicated repo or not.
+     * @param repository  ( Repository to be tested )
+     * @return True if replicated
+     */
+    public static boolean isReplicatedRepo(Repository repository) {
+        StoredConfig config = repository.getConfig();
+        return config.getBoolean("core", "replicated", false);
+    }
+
+    /**
+     * Expose whether the supplied repo should be replicated or not... Basically this depends on a few things,
+     * 1) Are we a replicated system,
+     *  - this can be disabled using java property or system environment: gerritms_replication_disabled=true
+     *  - this is disabled if replication configuration files are missing or not complete
+     * 2) Is this a replicated repository
+     *  - look for git configuration in the repo indicating to replicate it.
+     *
+     * @param repository  ( Repository to be tested )
+     * @return True if replicated
+     * @throws IOException throws exception if fails to find correct config in replicated system.
+     */
+    public static boolean shouldReplicateRepository(Repository repository) throws IOException {
+        if (!isReplicatedSystem()) {
+            return false;
+        }
+
+        // replication is enabled, so check the repo config.
+        return isReplicatedRepo(repository);
     }
 
     /**

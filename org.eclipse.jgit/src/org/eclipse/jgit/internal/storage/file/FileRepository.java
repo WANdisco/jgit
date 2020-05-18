@@ -51,7 +51,6 @@ import org.eclipse.jgit.api.errors.JGitInternalException;
 import org.eclipse.jgit.attributes.AttributesNode;
 import org.eclipse.jgit.attributes.AttributesNodeProvider;
 import org.eclipse.jgit.errors.ConfigInvalidException;
-import org.eclipse.jgit.errors.RepositoryAlreadyExistsException;
 import org.eclipse.jgit.events.ConfigChangedEvent;
 import org.eclipse.jgit.events.ConfigChangedListener;
 import org.eclipse.jgit.events.IndexChangedEvent;
@@ -70,15 +69,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.text.ParseException;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+
+import static org.eclipse.jgit.lib.ReplicatedUpdate.replicatedCreate;
 
 /**
  * Represents a Git repository. A repository holds all objects and refs used for
@@ -226,7 +224,7 @@ public class FileRepository extends Repository {
      * {@inheritDoc}
      * <p>
      * Create a new Git repository initializing the necessary files and
-     * directories. ( Locally only after calling replicated endpoint ).
+     * directories. ( Locally only after calling replicated endpoint, or for unreplicated repository/system ).
      */
     @Override
     public void unreplicatedCreate(boolean bare) throws IOException {
@@ -342,62 +340,7 @@ public class FileRepository extends Repository {
             return;
         }
 
-        String port = ReplicationConfiguration.getPort();
-        String timeout = ReplicationConfiguration.getRepoDeployTimeout();
-        String repoPath = null;
-
-        if (port == null || port.isEmpty()) {
-            throw new IOException("Invalid Replication Setup - no replication port currently configured.");
-        }
-
-        try {
-            repoPath = URLEncoder.encode(getDirectory().getAbsolutePath(), "UTF-8");
-            URL url = new URL("http://127.0.0.1:" + port + "/gerrit/deploy?"
-                    + "timeout=" + timeout + "&repoPath=" + repoPath);
-            HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
-            httpCon.setDoOutput(true);
-            httpCon.setUseCaches(false);
-            httpCon.setRequestMethod("PUT");
-            httpCon.setRequestProperty("Content-Type", "application/xml");
-            httpCon.setRequestProperty("Accept", "application/xml");
-            int response = httpCon.getResponseCode();
-
-            //an error may have happened, and if it did, the errorstream will be available
-            //to get more details - but if repo deployment was successful, getErrorStream
-            //will be null
-            StringBuilder responseString = new StringBuilder();
-            if (httpCon.getErrorStream() != null) {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(httpCon.getErrorStream()))) {
-
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        responseString.append(line);
-                        responseString.append(System.lineSeparator());
-                    }
-                }
-            }
-
-            httpCon.disconnect();
-
-            if (response == 412) {
-                // there has been a problem with the deployment
-                throw new RepositoryAlreadyExistsException(
-                        "Failure to create the git repository on the GitMS Replicator, response code: "
-                                + response + "Replicator response: "
-                                + responseString.toString());
-            }
-
-            if (response != 200) {
-                //there has been a problem with the deployment
-                throw new IOException("Failure to create the git repository on the GitMS Replicator, response code: " + response
-                        + "Replicator response: " + responseString.toString());
-            }
-
-        } catch (RepositoryAlreadyExistsException ex) {
-            throw ex;
-        } catch (IOException ex) {
-            throw new IOException("Error with deploying repo: " + ex.toString());
-        }
+        replicatedCreate(getDirectory().getAbsolutePath());
     }
 
     /**
