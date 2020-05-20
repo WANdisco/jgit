@@ -596,12 +596,31 @@ public class RefUpdateTest extends SampleDataRepositoryTestCase {
 		ObjectId pid = db.resolve("refs/heads/master");
 		RefUpdate updateRef = db.updateRef("refs/heads/master");
 		updateRef.setNewObjectId(pid);
+		// note old value can be tested but not if we are already in NEW state, that is invalid as we return
+		// NO_CHANGE now to support idempotent operations.
+		updateRef.setExpectedOldObjectId(db.resolve("refs/heads/master^"));
+		Result update = updateRef.update();
+		assertEquals(Result.NO_CHANGE, update);
+		assertEquals(pid, db.resolve("refs/heads/master"));
+	}
+	/**
+	 * Try modify a ref, but get wrong expected old value to get lock failure, but make sure
+	 * you aren't in the new state already - or it will return no_change.
+	 *
+	 * @throws IOException
+	 */
+	@Test
+	public void testUpdateRefLockFailureWrongOldValueAndNewValue() throws IOException {
+		ObjectId pid = db.resolve("refs/heads/c^");
+		ObjectId headpid = db.resolve("refs/heads/master");
+		RefUpdate updateRef = db.updateRef("refs/heads/master");
+		updateRef.setNewObjectId(pid);
 		updateRef.setExpectedOldObjectId(db.resolve("refs/heads/master^"));
 		Result update = updateRef.update();
 		assertEquals(Result.LOCK_FAILURE, update);
-		assertEquals(pid, db.resolve("refs/heads/master"));
+		// make sure we didn't change head...
+		assertEquals(headpid, db.resolve("refs/heads/master"));
 	}
-
 	/**
 	 * Try modify a ref forward, fast forward, checking old value first
 	 *
