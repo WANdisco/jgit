@@ -31,7 +31,7 @@ public class ReplicatedUpdate {
     // N.B. ONLY for dev use
     private static final boolean logMeEnabled = getOverrideBehaviour(REPLICATION_REFUPDATE_LOGGING);
     // TODO: trevorg Flip this default back to false, when we get the inProc code written! GER-977
-    private static final boolean useRPGitUpdateScript = getOverrideBehaviour(REPLICATION_USE_GIT_UPDATE_SCRIPT, true);
+    private static final boolean useRPGitUpdateScript = getOverrideBehaviour(REPLICATION_USE_GIT_UPDATE_SCRIPT, false);
 
 
     /**
@@ -63,18 +63,20 @@ public class ReplicatedUpdate {
                 GitUpdateResult result = GitUpdateAccessor.updateRepository(gitUpdateRequest);
 
                 if (result == null) {
-                    logMe("Unable to find a GitUpdateResult to the update repository call: " +
-                          gitUpdateRequest.toString());
-                    return null;
+                    StringBuilder sb = new StringBuilder("Unable to find a GitUpdateResult to the update repository call: ");
+                    sb.append(gitUpdateRequest.toString());
+                    logMe(sb.toString());
+                    throw new IOException(sb.toString());
                 }
 
                 return result.updateResultCode;
             } catch (GitUpdateException e) {
-                logMe("Exception happening whem updating repo: ", e);
+                logMe("Exception happened when updating repo: ", e);
 
-                // Return null, and let the outside code try to work out the failure as we couldn't even cast the
-                // return information to a GitUpdateResult of some type.
-                return null;
+                // If we return null here it is not possible to work out what happened.
+                // Due to the call chain we have to wrap as an IOException as it knows
+                // nothing about GitUpdateException.
+                throw new IOException(e.getCause());
             }
         }
 
@@ -235,10 +237,10 @@ public class ReplicatedUpdate {
         try {
             BatchGitUpdateResult result = BatchGitUpdateAccessor.updateRepository(batchGitUpdateRequest);
             if (result == null) {
-                logMe("Unable to find a BatchGitUpdateResult to the update repository call: " +
-                      batchGitUpdateRequest.toString());
-                return null;
-
+                StringBuilder sb = new StringBuilder("Unable to find a BatchGitUpdateResult for the update repository call: ");
+                sb.append(batchGitUpdateRequest.toString());
+                logMe(sb.toString());
+                throw new IOException(sb.toString());
             }
             return result;
         } catch (Exception e) {
