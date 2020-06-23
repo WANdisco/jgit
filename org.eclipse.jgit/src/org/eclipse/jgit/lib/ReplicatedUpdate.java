@@ -76,7 +76,7 @@ public class ReplicatedUpdate {
                 // If we return null here it is not possible to work out what happened.
                 // Due to the call chain we have to wrap as an IOException as it knows
                 // nothing about GitUpdateException.
-                throw new IOException(e.getCause());
+                throw new IOException(e);
             }
         }
 
