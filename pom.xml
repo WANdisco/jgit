@@ -63,7 +63,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
   <groupId>org.eclipse.jgit</groupId>
   <artifactId>org.eclipse.jgit-parent</artifactId>
   <packaging>pom</packaging>
-  <version>5.1.12-WDv1-TC5-SNAPSHOT</version>
+  <version>5.1.13-WDv1-SNAPSHOT</version>
 
   <name>JGit - Parent</name>
   <url>${jgit-url}</url>
@@ -797,7 +797,6 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
         <plugins>
           <plugin>
             <artifactId>maven-compiler-plugin</artifactId>
-            <version>${maven-compiler-plugin-version}</version>
             <configuration>
               <encoding>UTF-8</encoding>
               <source>1.8</source>
@@ -866,7 +865,6 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
         <plugins>
           <plugin>
             <artifactId>maven-compiler-plugin</artifactId>
-            <version>${maven-compiler-plugin-version}</version>
             <configuration>
               <compilerId>eclipse</compilerId>
               <encoding>UTF-8</encoding>
@@ -995,6 +993,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
     <module>org.eclipse.jgit.pgm.test</module>
     <module>org.eclipse.jgit.lfs.test</module>
     <module>org.eclipse.jgit.lfs.server.test</module>
+    <module>org.eclipse.jgit.benchmarks</module>
   </modules>
 
 </project>

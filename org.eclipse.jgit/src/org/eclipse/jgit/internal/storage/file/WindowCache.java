@@ -47,14 +47,22 @@ package org.eclipse.jgit.internal.storage.file;
 import java.io.IOException;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
+import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.storage.file.WindowCacheConfig;
+import org.eclipse.jgit.storage.file.WindowCacheStats;
+import org.eclipse.jgit.util.Monitoring;
 
 /**
  * Caches slices of a {@link org.eclipse.jgit.internal.storage.file.PackFile} in
@@ -82,9 +90,16 @@ import org.eclipse.jgit.storage.file.WindowCacheConfig;
  * comprised of roughly 10% of the cache, and evicting the oldest accessed entry
  * within that window.
  * <p>
- * Entities created by the cache are held under SoftReferences, permitting the
+ * Entities created by the cache are held under SoftReferences if option
+ * {@code core.packedGitUseStrongRefs} is set to {@code false} in the git config
+ * (this is the default) or by calling
+ * {@link WindowCacheConfig#setPackedGitUseStrongRefs(boolean)}, permitting the
  * Java runtime's garbage collector to evict entries when heap memory gets low.
  * Most JREs implement a loose least recently used algorithm for this eviction.
+ * When this option is set to {@code true} strong references are used which
+ * means that Java gc cannot evict the WindowCache to reclaim memory. On the
+ * other hand this provides more predictable performance since the cache isn't
+ * flushed when used heap comes close to the maximum heap size.
  * <p>
  * The internal hash table does not expand at runtime, instead it is fixed in
  * size at cache creation time. The internal lock table used to gate load
@@ -101,19 +116,19 @@ import org.eclipse.jgit.storage.file.WindowCacheConfig;
  * for a given <code>(PackFile,position)</code> tuple.</li>
  * <li>For every <code>load()</code> invocation there is exactly one
  * {@link #createRef(PackFile, long, ByteWindow)} invocation to wrap a
- * SoftReference around the cached entity.</li>
+ * SoftReference or a StrongReference around the cached entity.</li>
  * <li>For every Reference created by <code>createRef()</code> there will be
- * exactly one call to {@link #clear(Ref)} to cleanup any resources associated
+ * exactly one call to {@link #clear(PageRef)} to cleanup any resources associated
  * with the (now expired) cached entity.</li>
  * </ul>
  * <p>
  * Therefore, it is safe to perform resource accounting increments during the
  * {@link #load(PackFile, long)} or
  * {@link #createRef(PackFile, long, ByteWindow)} methods, and matching
- * decrements during {@link #clear(Ref)}. Implementors may need to override
+ * decrements during {@link #clear(PageRef)}. Implementors may need to override
  * {@link #createRef(PackFile, long, ByteWindow)} in order to embed additional
  * accounting information into an implementation specific
- * {@link org.eclipse.jgit.internal.storage.file.WindowCache.Ref} subclass, as
+ * {@link org.eclipse.jgit.internal.storage.file.WindowCache.PageRef} subclass, as
  * the cached entity may have already been evicted by the JRE's garbage
  * collector.
  * <p>
@@ -124,6 +139,225 @@ import org.eclipse.jgit.storage.file.WindowCacheConfig;
  * other threads.
  */
 public class WindowCache {
+
+	/**
+	 * Record statistics for a cache
+	 */
+	static interface StatsRecorder {
+		/**
+		 * Record cache hits. Called when cache returns a cached entry.
+		 *
+		 * @param count
+		 *            number of cache hits to record
+		 */
+		void recordHits(int count);
+
+		/**
+		 * Record cache misses. Called when the cache returns an entry which had
+		 * to be loaded.
+		 *
+		 * @param count
+		 *            number of cache misses to record
+		 */
+		void recordMisses(int count);
+
+		/**
+		 * Record a successful load of a cache entry
+		 *
+		 * @param loadTimeNanos
+		 *            time to load a cache entry
+		 */
+		void recordLoadSuccess(long loadTimeNanos);
+
+		/**
+		 * Record a failed load of a cache entry
+		 *
+		 * @param loadTimeNanos
+		 *            time used trying to load a cache entry
+		 */
+		void recordLoadFailure(long loadTimeNanos);
+
+		/**
+		 * Record cache evictions due to the cache evictions strategy
+		 *
+		 * @param count
+		 *            number of evictions to record
+		 */
+		void recordEvictions(int count);
+
+		/**
+		 * Record files opened by cache
+		 *
+		 * @param delta
+		 *            delta of number of files opened by cache
+		 */
+		void recordOpenFiles(int delta);
+
+		/**
+		 * Record cached bytes
+		 *
+		 * @param pack
+		 *            pack file the bytes are read from
+		 *
+		 * @param delta
+		 *            delta of cached bytes
+		 */
+		void recordOpenBytes(PackFile pack, int delta);
+
+		/**
+		 * Returns a snapshot of this recorder's stats. Note that this may be an
+		 * inconsistent view, as it may be interleaved with update operations.
+		 *
+		 * @return a snapshot of this recorder's stats
+		 */
+		@NonNull
+		WindowCacheStats getStats();
+	}
+
+	static class StatsRecorderImpl
+			implements StatsRecorder, WindowCacheStats {
+		private final LongAdder hitCount;
+		private final LongAdder missCount;
+		private final LongAdder loadSuccessCount;
+		private final LongAdder loadFailureCount;
+		private final LongAdder totalLoadTime;
+		private final LongAdder evictionCount;
+		private final LongAdder openFileCount;
+		private final LongAdder openByteCount;
+		private final Map<String, LongAdder> openByteCountPerRepository;
+
+		/**
+		 * Constructs an instance with all counts initialized to zero.
+		 */
+		public StatsRecorderImpl() {
+			hitCount = new LongAdder();
+			missCount = new LongAdder();
+			loadSuccessCount = new LongAdder();
+			loadFailureCount = new LongAdder();
+			totalLoadTime = new LongAdder();
+			evictionCount = new LongAdder();
+			openFileCount = new LongAdder();
+			openByteCount = new LongAdder();
+			openByteCountPerRepository = new ConcurrentHashMap<>();
+		}
+
+		@Override
+		public void recordHits(int count) {
+			hitCount.add(count);
+		}
+
+		@Override
+		public void recordMisses(int count) {
+			missCount.add(count);
+		}
+
+		@Override
+		public void recordLoadSuccess(long loadTimeNanos) {
+			loadSuccessCount.increment();
+			totalLoadTime.add(loadTimeNanos);
+		}
+
+		@Override
+		public void recordLoadFailure(long loadTimeNanos) {
+			loadFailureCount.increment();
+			totalLoadTime.add(loadTimeNanos);
+		}
+
+		@Override
+		public void recordEvictions(int count) {
+			evictionCount.add(count);
+		}
+
+		@Override
+		public void recordOpenFiles(int delta) {
+			openFileCount.add(delta);
+		}
+
+		@Override
+		public void recordOpenBytes(PackFile pack, int delta) {
+			openByteCount.add(delta);
+			String repositoryId = repositoryId(pack);
+			LongAdder la = openByteCountPerRepository
+					.computeIfAbsent(repositoryId, k -> new LongAdder());
+			la.add(delta);
+			if (delta < 0) {
+				openByteCountPerRepository.computeIfPresent(repositoryId,
+						(k, v) -> v.longValue() == 0 ? null : v);
+			}
+		}
+
+		private static String repositoryId(PackFile pack) {
+			// use repository's gitdir since packfile doesn't know its
+			// repository
+			return pack.getPackFile().getParentFile().getParentFile()
+					.getParent();
+		}
+
+		@Override
+		public WindowCacheStats getStats() {
+			return this;
+		}
+
+		@Override
+		public long getHitCount() {
+			return hitCount.sum();
+		}
+
+		@Override
+		public long getMissCount() {
+			return missCount.sum();
+		}
+
+		@Override
+		public long getLoadSuccessCount() {
+			return loadSuccessCount.sum();
+		}
+
+		@Override
+		public long getLoadFailureCount() {
+			return loadFailureCount.sum();
+		}
+
+		@Override
+		public long getEvictionCount() {
+			return evictionCount.sum();
+		}
+
+		@Override
+		public long getTotalLoadTime() {
+			return totalLoadTime.sum();
+		}
+
+		@Override
+		public long getOpenFileCount() {
+			return openFileCount.sum();
+		}
+
+		@Override
+		public long getOpenByteCount() {
+			return openByteCount.sum();
+		}
+
+		@Override
+		public void resetCounters() {
+			hitCount.reset();
+			missCount.reset();
+			loadSuccessCount.reset();
+			loadFailureCount.reset();
+			totalLoadTime.reset();
+			evictionCount.reset();
+		}
+
+		@Override
+		public Map<String, Long> getOpenByteCountPerRepository() {
+			return Collections.unmodifiableMap(
+					openByteCountPerRepository.entrySet().stream()
+							.collect(Collectors.toMap(Map.Entry::getKey,
+									e -> Long.valueOf(e.getValue().sum()),
+									(u, v) -> v)));
+		}
+	}
+
 	private static final int bits(int newSize) {
 		if (newSize < 4096)
 			throw new IllegalArgumentException(JGitText.get().invalidWindowSize);
@@ -197,8 +431,8 @@ public class WindowCache {
 		cache.removeAll(pack);
 	}
 
-	/** ReferenceQueue to cleanup released and garbage collected windows. */
-	private final ReferenceQueue<ByteWindow> queue;
+	/** cleanup released and/or garbage collected windows. */
+	private final CleanupQueue queue;
 
 	/** Number of entries in {@link #table}. */
 	private final int tableSize;
@@ -228,9 +462,11 @@ public class WindowCache {
 
 	private final int windowSize;
 
-	private final AtomicInteger openFiles;
+	private final StatsRecorder statsRecorder;
 
-	private final AtomicLong openBytes;
+	private final StatsRecorderImpl mbean;
+
+	private boolean useStrongRefs;
 
 	private WindowCache(WindowCacheConfig cfg) {
 		tableSize = tableSize(cfg);
@@ -240,7 +476,6 @@ public class WindowCache {
 		if (lockCount < 1)
 			throw new IllegalArgumentException(JGitText.get().lockCountMustBeGreaterOrEqual1);
 
-		queue = new ReferenceQueue<>();
 		clock = new AtomicLong(1);
 		table = new AtomicReferenceArray<>(tableSize);
 		locks = new Lock[lockCount];
@@ -262,9 +497,13 @@ public class WindowCache {
 		mmap = cfg.isPackedGitMMAP();
 		windowSizeShift = bits(cfg.getPackedGitWindowSize());
 		windowSize = 1 << windowSizeShift;
+		useStrongRefs = cfg.isPackedGitUseStrongRefs();
+		queue = useStrongRefs ? new StrongCleanupQueue(this)
+				: new SoftCleanupQueue(this);
 
-		openFiles = new AtomicInteger();
-		openBytes = new AtomicLong();
+		mbean = new StatsRecorderImpl();
+		statsRecorder = mbean;
+		Monitoring.registerMBean(mbean, "block_cache"); //$NON-NLS-1$
 
 		if (maxFiles < 1)
 			throw new IllegalArgumentException(JGitText.get().openFilesMustBeAtLeast1);
@@ -273,61 +512,65 @@ public class WindowCache {
 	}
 
 	/**
-	 * @return the number of open files.
+	 * @return cache statistics for the WindowCache
 	 */
-	public int getOpenFiles() {
-		return openFiles.get();
+	public WindowCacheStats getStats() {
+		return statsRecorder.getStats();
 	}
 
 	/**
-	 * @return the number of open bytes.
+	 * Reset stats. Does not reset open bytes and open files stats.
 	 */
-	public long getOpenBytes() {
-		return openBytes.get();
+	public void resetStats() {
+		mbean.resetCounters();
 	}
 
 	private int hash(int packHash, long off) {
 		return packHash + (int) (off >>> windowSizeShift);
 	}
 
-	private ByteWindow load(PackFile pack, long offset)
-			throws IOException {
+	private ByteWindow load(PackFile pack, long offset) throws IOException {
+		long startTime = System.nanoTime();
 		if (pack.beginWindowCache())
-			openFiles.incrementAndGet();
+			statsRecorder.recordOpenFiles(1);
 		try {
 			if (mmap)
 				return pack.mmap(offset, windowSize);
-			return pack.read(offset, windowSize);
-		} catch (IOException e) {
+			ByteArrayWindow w = pack.read(offset, windowSize);
+			statsRecorder.recordLoadSuccess(System.nanoTime() - startTime);
+			return w;
+		} catch (IOException | RuntimeException | Error e) {
 			close(pack);
+			statsRecorder.recordLoadFailure(System.nanoTime() - startTime);
 			throw e;
-		} catch (RuntimeException e) {
-			close(pack);
-			throw e;
-		} catch (Error e) {
-			close(pack);
-			throw e;
+		} finally {
+			statsRecorder.recordMisses(1);
 		}
 	}
 
-	private Ref createRef(PackFile p, long o, ByteWindow v) {
-		final Ref ref = new Ref(p, o, v, queue);
-		openBytes.addAndGet(ref.size);
+	private PageRef<ByteWindow> createRef(PackFile p, long o, ByteWindow v) {
+		final PageRef<ByteWindow> ref = useStrongRefs
+				? new StrongRef(p, o, v, queue)
+				: new SoftRef(p, o, v, (SoftCleanupQueue) queue);
+		statsRecorder.recordOpenBytes(ref.getPack(), ref.getSize());
 		return ref;
 	}
 
-	private void clear(Ref ref) {
-		openBytes.addAndGet(-ref.size);
-		close(ref.pack);
+	private void clear(PageRef<ByteWindow> ref) {
+		statsRecorder.recordOpenBytes(ref.getPack(), -ref.getSize());
+		statsRecorder.recordEvictions(1);
+		close(ref.getPack());
 	}
 
 	private void close(PackFile pack) {
-		if (pack.endWindowCache())
-			openFiles.decrementAndGet();
+		if (pack.endWindowCache()) {
+			statsRecorder.recordOpenFiles(-1);
+		}
 	}
 
 	private boolean isFull() {
-		return maxFiles < openFiles.get() || maxBytes < openBytes.get();
+		return maxFiles < mbean.getOpenFileCount()
+				|| maxBytes < mbean.getOpenByteCount();
 	}
 
 	private long toStart(long offset) {
@@ -365,19 +608,23 @@ public class WindowCache {
 		final int slot = slot(pack, position);
 		final Entry e1 = table.get(slot);
 		ByteWindow v = scan(e1, pack, position);
-		if (v != null)
+		if (v != null) {
+			statsRecorder.recordHits(1);
 			return v;
+		}
 
 		synchronized (lock(pack, position)) {
 			Entry e2 = table.get(slot);
 			if (e2 != e1) {
 				v = scan(e2, pack, position);
-				if (v != null)
+				if (v != null) {
+					statsRecorder.recordHits(1);
 					return v;
+				}
 			}
 
 			v = load(pack, position);
-			final Ref ref = createRef(pack, position, v);
+			final PageRef<ByteWindow> ref = createRef(pack, position, v);
 			hit(ref);
 			for (;;) {
 				final Entry n = new Entry(clean(e2), ref);
@@ -401,8 +648,8 @@ public class WindowCache {
 
 	private ByteWindow scan(Entry n, PackFile pack, long position) {
 		for (; n != null; n = n.next) {
-			final Ref r = n.ref;
-			if (r.pack == pack && r.position == position) {
+			final PageRef<ByteWindow> r = n.ref;
+			if (r.getPack() == pack && r.getPosition() == position) {
 				final ByteWindow v = r.get();
 				if (v != null) {
 					hit(r);
@@ -415,7 +662,7 @@ public class WindowCache {
 		return null;
 	}
 
-	private void hit(Ref r) {
+	private void hit(PageRef r) {
 		// We don't need to be 100% accurate here. Its sufficient that at least
 		// one thread performs the increment. Any other concurrent access at
 		// exactly the same time can simply use the same clock value.
@@ -425,7 +672,7 @@ public class WindowCache {
 		//
 		final long c = clock.get();
 		clock.compareAndSet(c, c + 1);
-		r.lastAccess = c;
+		r.setLastAccess(c);
 	}
 
 	private void evict() {
@@ -439,7 +686,8 @@ public class WindowCache {
 				for (Entry e = table.get(ptr); e != null; e = e.next) {
 					if (e.dead)
 						continue;
-					if (old == null || e.ref.lastAccess < old.ref.lastAccess) {
+					if (old == null || e.ref.getLastAccess() < old.ref
+							.getLastAccess()) {
 						old = e;
 						slot = ptr;
 					}
@@ -459,7 +707,7 @@ public class WindowCache {
 	 * <p>
 	 * This is a last-ditch effort to clear out the cache, such as before it
 	 * gets replaced by another cache that is configured differently. This
-	 * method tries to force every cached entry through {@link #clear(Ref)} to
+	 * method tries to force every cached entry through {@link #clear(PageRef)} to
 	 * ensure that resources are correctly accounted for and cleaned up by the
 	 * subclass. A concurrent reader loading entries while this method is
 	 * running may cause resource accounting failures.
@@ -492,7 +740,7 @@ public class WindowCache {
 			final Entry e1 = table.get(s);
 			boolean hasDead = false;
 			for (Entry e = e1; e != null; e = e.next) {
-				if (e.ref.pack == pack) {
+				if (e.ref.getPack() == pack) {
 					e.kill();
 					hasDead = true;
 				} else if (e.dead)
@@ -505,20 +753,7 @@ public class WindowCache {
 	}
 
 	private void gc() {
-		Ref r;
-		while ((r = (Ref) queue.poll()) != null) {
-			clear(r);
-
-			final int s = slot(r.pack, r.position);
-			final Entry e1 = table.get(s);
-			for (Entry n = e1; n != null; n = n.next) {
-				if (n.ref == r) {
-					n.dead = true;
-					table.compareAndSet(s, e1, clean(e1));
-					break;
-				}
-			}
-		}
+		queue.gc();
 	}
 
 	private int slot(PackFile pack, long position) {
@@ -531,7 +766,7 @@ public class WindowCache {
 
 	private static Entry clean(Entry top) {
 		while (top != null && top.dead) {
-			top.ref.enqueue();
+			top.ref.kill();
 			top = top.next;
 		}
 		if (top == null)
@@ -545,7 +780,7 @@ public class WindowCache {
 		final Entry next;
 
 		/** The referenced object. */
-		final Ref ref;
+		final PageRef<ByteWindow> ref;
 
 		/**
 		 * Marked true when ref.get() returns null and the ref is dead.
@@ -556,33 +791,274 @@ public class WindowCache {
 		 */
 		volatile boolean dead;
 
-		Entry(Entry n, Ref r) {
+		Entry(Entry n, PageRef<ByteWindow> r) {
 			next = n;
 			ref = r;
 		}
 
 		final void kill() {
 			dead = true;
-			ref.enqueue();
+			ref.kill();
 		}
 	}
 
+	private static interface PageRef<T> {
+		/**
+		 * Returns this reference object's referent. If this reference object
+		 * has been cleared, either by the program or by the garbage collector,
+		 * then this method returns <code>null</code>.
+		 *
+		 * @return The object to which this reference refers, or
+		 *         <code>null</code> if this reference object has been cleared
+		 */
+		T get();
+
+	    /**
+		 * Kill this ref
+		 *
+		 * @return <code>true</code> if this reference object was successfully
+		 *         killed; <code>false</code> if it was already killed
+		 */
+		boolean kill();
+
+		/**
+		 * Get the packfile the referenced cache page is allocated for
+		 *
+		 * @return the packfile the referenced cache page is allocated for
+		 */
+		PackFile getPack();
+
+		/**
+		 * Get the position of the referenced cache page in the packfile
+		 *
+		 * @return the position of the referenced cache page in the packfile
+		 */
+		long getPosition();
+
+		/**
+		 * Get size of cache page
+		 *
+		 * @return size of cache page
+		 */
+		int getSize();
+
+		/**
+		 * Get pseudo time of last access to this cache page
+		 *
+		 * @return pseudo time of last access to this cache page
+		 */
+		long getLastAccess();
+
+		/**
+		 * Set pseudo time of last access to this cache page
+		 *
+		 * @param time
+		 *            pseudo time of last access to this cache page
+		 */
+		void setLastAccess(long time);
+
+		/**
+		 * Whether this is a strong reference.
+		 * @return {@code true} if this is a strong reference
+		 */
+		boolean isStrongRef();
+	}
+
 	/** A soft reference wrapped around a cached object. */
-	private static class Ref extends SoftReference<ByteWindow> {
-		final PackFile pack;
+	private static class SoftRef extends SoftReference<ByteWindow>
+			implements PageRef<ByteWindow> {
+		private final PackFile pack;
 
-		final long position;
+		private final long position;
 
-		final int size;
+		private final int size;
 
-		long lastAccess;
+		private long lastAccess;
 
-		protected Ref(final PackFile pack, final long position,
-				final ByteWindow v, final ReferenceQueue<ByteWindow> queue) {
+		protected SoftRef(final PackFile pack, final long position,
+				final ByteWindow v, final SoftCleanupQueue queue) {
 			super(v, queue);
 			this.pack = pack;
 			this.position = position;
 			this.size = v.size();
+		}
+
+		@Override
+		public PackFile getPack() {
+			return pack;
+		}
+
+		@Override
+		public long getPosition() {
+			return position;
+		}
+
+		@Override
+		public int getSize() {
+			return size;
+		}
+
+		@Override
+		public long getLastAccess() {
+			return lastAccess;
+		}
+
+		@Override
+		public void setLastAccess(long time) {
+			this.lastAccess = time;
+		}
+
+		@Override
+		public boolean kill() {
+			return enqueue();
+		}
+
+		@Override
+		public boolean isStrongRef() {
+			return false;
+		}
+	}
+
+	/** A strong reference wrapped around a cached object. */
+	private static class StrongRef implements PageRef<ByteWindow> {
+		private ByteWindow referent;
+
+		private final PackFile pack;
+
+		private final long position;
+
+		private final int size;
+
+		private long lastAccess;
+
+		private CleanupQueue queue;
+
+		protected StrongRef(final PackFile pack, final long position,
+				final ByteWindow v, final CleanupQueue queue) {
+			this.pack = pack;
+			this.position = position;
+			this.referent = v;
+			this.size = v.size();
+			this.queue = queue;
+		}
+
+		@Override
+		public PackFile getPack() {
+			return pack;
+		}
+
+		@Override
+		public long getPosition() {
+			return position;
+		}
+
+		@Override
+		public int getSize() {
+			return size;
+		}
+
+		@Override
+		public long getLastAccess() {
+			return lastAccess;
+		}
+
+		@Override
+		public void setLastAccess(long time) {
+			this.lastAccess = time;
+		}
+
+		@Override
+		public ByteWindow get() {
+			return referent;
+		}
+
+		@Override
+		public boolean kill() {
+			if (referent == null) {
+				return false;
+			}
+			referent = null;
+			return queue.enqueue(this);
+		}
+
+		@Override
+		public boolean isStrongRef() {
+			return true;
+		}
+	}
+
+	private static interface CleanupQueue {
+		boolean enqueue(PageRef<ByteWindow> r);
+		void gc();
+	}
+
+	private static class SoftCleanupQueue extends ReferenceQueue<ByteWindow>
+			implements CleanupQueue {
+		private final WindowCache wc;
+
+		SoftCleanupQueue(WindowCache cache) {
+			this.wc = cache;
+		}
+
+		@Override
+		public boolean enqueue(PageRef<ByteWindow> r) {
+			// no need to explicitly add soft references which are enqueued by
+			// the JVM
+			return false;
+		}
+
+		@Override
+		public void gc() {
+			SoftRef r;
+			while ((r = (SoftRef) poll()) != null) {
+				wc.clear(r);
+
+				final int s = wc.slot(r.getPack(), r.getPosition());
+				final Entry e1 = wc.table.get(s);
+				for (Entry n = e1; n != null; n = n.next) {
+					if (n.ref == r) {
+						n.dead = true;
+						wc.table.compareAndSet(s, e1, clean(e1));
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	private static class StrongCleanupQueue implements CleanupQueue {
+		private final WindowCache wc;
+
+		private final ConcurrentLinkedQueue<PageRef<ByteWindow>> queue = new ConcurrentLinkedQueue<>();
+
+		StrongCleanupQueue(WindowCache wc) {
+			this.wc = wc;
+		}
+
+		@Override
+		public boolean enqueue(PageRef<ByteWindow> r) {
+			if (queue.contains(r)) {
+				return false;
+			}
+			return queue.add(r);
+		}
+
+		@Override
+		public void gc() {
+			PageRef<ByteWindow> r;
+			while ((r = queue.poll()) != null) {
+				wc.clear(r);
+
+				final int s = wc.slot(r.getPack(), r.getPosition());
+				final Entry e1 = wc.table.get(s);
+				for (Entry n = e1; n != null; n = n.next) {
+					if (n.ref == r) {
+						n.dead = true;
+						wc.table.compareAndSet(s, e1, clean(e1));
+						break;
+					}
+				}
+			}
 		}
 	}
 

@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <component id="org.eclipse.jgit" version="2">
+    <resource path="META-INF/MANIFEST.MF">
+        <filter id="924844039">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="5.1.0"/>
+            </message_arguments>
+        </filter>
+    </resource>
     <resource path="src/org/eclipse/jgit/dircache/DirCacheEntry.java" type="org.eclipse.jgit.dircache.DirCacheEntry">
         <filter id="1142947843">
             <message_arguments>
@@ -35,9 +43,40 @@
         </filter>
     </resource>
     <resource path="src/org/eclipse/jgit/lib/ConfigConstants.java" type="org.eclipse.jgit.lib.ConfigConstants">
-        <filter id="337768515">
+        <filter id="1142947843">
             <message_arguments>
-                <message_argument value="org.eclipse.jgit.lib.ConfigConstants"/>
+                <message_argument value="5.1.13"/>
+                <message_argument value="CONFIG_JMX_SECTION"/>
+            </message_arguments>
+        </filter>
+        <filter id="1142947843">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="CONFIG_KEY_PACKED_GIT_LIMIT"/>
+            </message_arguments>
+        </filter>
+        <filter id="1142947843">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="CONFIG_KEY_PACKED_GIT_MMAP"/>
+            </message_arguments>
+        </filter>
+        <filter id="1142947843">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="CONFIG_KEY_PACKED_GIT_OPENFILES"/>
+            </message_arguments>
+        </filter>
+        <filter id="1142947843">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="CONFIG_KEY_PACKED_GIT_USE_STRONGREFS"/>
+            </message_arguments>
+        </filter>
+        <filter id="1142947843">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="CONFIG_KEY_PACKED_GIT_WINDOWSIZE"/>
             </message_arguments>
         </filter>
         <filter id="1142947843">
@@ -72,6 +111,29 @@
             <message_arguments>
                 <message_argument value="4.7.5"/>
                 <message_argument value="getGitsubmodules()"/>
+            </message_arguments>
+        </filter>
+    </resource>
+    <resource path="src/org/eclipse/jgit/storage/file/WindowCacheConfig.java" type="org.eclipse.jgit.storage.file.WindowCacheConfig">
+        <filter id="1142947843">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="isPackedGitUseStrongRefs()"/>
+            </message_arguments>
+        </filter>
+        <filter id="1142947843">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="setPackedGitUseStrongRefs(boolean)"/>
+            </message_arguments>
+        </filter>
+    </resource>
+    <resource path="src/org/eclipse/jgit/storage/file/WindowCacheStats.java" type="org.eclipse.jgit.storage.file.WindowCacheStats">
+        <filter id="337809484">
+            <message_arguments>
+                <message_argument value="org.eclipse.jgit.storage.file.WindowCacheStats"/>
+                <message_argument value="4"/>
+                <message_argument value="8"/>
             </message_arguments>
         </filter>
     </resource>
@@ -131,13 +193,6 @@
             </message_arguments>
         </filter>
     </resource>
-    <resource path="src/org/eclipse/jgit/transport/GitProtocolConstants.java" type="org.eclipse.jgit.transport.GitProtocolConstants">
-        <filter id="337768515">
-            <message_arguments>
-                <message_argument value="org.eclipse.jgit.transport.GitProtocolConstants"/>
-            </message_arguments>
-        </filter>
-    </resource>
     <resource path="src/org/eclipse/jgit/transport/TransferConfig.java" type="org.eclipse.jgit.transport.TransferConfig">
         <filter id="1159725059">
             <message_arguments>
@@ -175,13 +230,6 @@
         </filter>
     </resource>
     <resource path="src/org/eclipse/jgit/util/FS.java" type="org.eclipse.jgit.util.FS">
-        <filter id="1141899266">
-            <message_arguments>
-                <message_argument value="4.7"/>
-                <message_argument value="5.1"/>
-                <message_argument value="createNewFileAtomic(File)"/>
-            </message_arguments>
-        </filter>
         <filter id="1142947843">
             <message_arguments>
                 <message_argument value="4.5.6"/>
@@ -235,20 +283,19 @@
             </message_arguments>
         </filter>
     </resource>
-    <resource path="src/org/eclipse/jgit/util/FS.java" type="org.eclipse.jgit.util.FS$LockToken">
-        <filter id="1141899266">
-            <message_arguments>
-                <message_argument value="4.7"/>
-                <message_argument value="5.1"/>
-                <message_argument value="LockToken"/>
-            </message_arguments>
-        </filter>
-    </resource>
     <resource path="src/org/eclipse/jgit/util/FileUtils.java" type="org.eclipse.jgit.util.FileUtils">
         <filter id="1142947843">
             <message_arguments>
                 <message_argument value="5.1.8"/>
                 <message_argument value="touch(Path)"/>
+            </message_arguments>
+        </filter>
+    </resource>
+    <resource path="src/org/eclipse/jgit/util/Monitoring.java" type="org.eclipse.jgit.util.Monitoring">
+        <filter id="1109393411">
+            <message_arguments>
+                <message_argument value="5.1.13"/>
+                <message_argument value="org.eclipse.jgit.util.Monitoring"/>
             </message_arguments>
         </filter>
     </resource>
