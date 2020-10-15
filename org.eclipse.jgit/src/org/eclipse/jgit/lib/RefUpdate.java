@@ -697,9 +697,9 @@ public abstract class RefUpdate {
         if (shouldReplicateRepository(getRepository())) {
             Result res = doReplicatedUpdate();
             // Now check the update, and return success / rejected information.
-            // TODO: trevorg
-            //  WORK HERE...
-            //  a check is one thing, but the actual result is already known / returned by the handler in gitresult...
+            // Update result is normally known when using GitMS via Rest.
+            // N.B. We still allow the old call to rp-git-update which returns null, we then
+            // need to work out the result.
             if ( res == null ) {
                 return verifyReplicatedUpdate(walk);
             }
@@ -712,7 +712,7 @@ public abstract class RefUpdate {
             // out of curiosity compare..
             if ( verifiedResult != res )
             {
-                LOG.warn("Verified RefUpdate result was: %s but replication result was: %s",
+                LOG.warn("Verified RefUpdate result was: {} but replication result was: {}",
                          verifiedResult.toString(), res.toString());
             }
 
