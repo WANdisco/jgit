@@ -704,15 +704,21 @@ public abstract class RefUpdate {
                 return verifyReplicatedUpdate(walk);
             }
 
-            // Now we should be able to just return res as the safe result - the handler did it after all!!
+            // If we have reached this point by taking the JGit path, the result returned by the GitDelegate was a
+            // success, but it may not have returned the type of update. The Rest call is receiving a 'text/plain'
+            // response and not JSon, so the update type will default to NOT_ATTEMPTED.
+            // See 'GitUpdateRestApiClient.issueRequestAndProcessResponse()'. If we want to skip the rev-walk we
+            // need to ensure res also received a valid update type.
+
+            // Ideally, we should be able to just return res as the safe result - the handler did it after all!!
             // for now just use this for comparison and remove it before final checkin!!
-            // TODO: trevorg remove after testing!!
+            // TODO: trevorg, stuarth Can doReplicatedUpdate/GitDelegate be changed in a low impact way to ensure res
+            //  has an update type already; allowing us to skip this rev-walk?
             Result verifiedResult = verifyReplicatedUpdate(walk);
 
-            // out of curiosity compare..
             if ( verifiedResult != res )
             {
-                LOG.warn("Verified RefUpdate result was: {} but replication result was: {}",
+                LOG.debug("Verified RefUpdate result was: {} but replication result was: {}",
                          verifiedResult.toString(), res.toString());
             }
 
