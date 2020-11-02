@@ -80,7 +80,7 @@ public class ReplicatedUpdate {
                 throw new IOException(sb.toString());
             }
 
-            return result.updateResultCode;
+            return result.getUpdateResultCode();
         } catch (GitUpdateException | ConfigurationException e) {
             logMe("Exception happened when updating repo: ", e);
 

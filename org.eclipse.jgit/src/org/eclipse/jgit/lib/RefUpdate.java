@@ -46,16 +46,14 @@ package org.eclipse.jgit.lib;
 
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.revwalk.RevBlob;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.PushCertificate;
 import org.eclipse.jgit.util.ReplicationConfiguration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -68,8 +66,6 @@ import static org.eclipse.jgit.util.ReplicationConfiguration.shouldReplicateRepo
  * Creates, updates or deletes any reference.
  */
 public abstract class RefUpdate {
-
-    private final static Logger LOG = LoggerFactory.getLogger(RefUpdate.class);
 
     /**
      * Status of an update request.
@@ -695,74 +691,9 @@ public abstract class RefUpdate {
     public Result update(final RevWalk walk) throws IOException {
         requireCanDoUpdate();
 
-        if (shouldReplicateRepository(getRepository())) {
-            Result res = doReplicatedUpdate();
-            // Now check the update, and return success / rejected information.
-            // Update result is normally known when using GitMS via Rest.
-            // N.B. We still allow the old call to rp-git-update which returns null, we then
-            // need to work out the result.
-            if ( res == null ) {
-                return verifyReplicatedUpdate(walk);
-            }
-
-            // If we have reached this point by taking the JGit path, the result returned by the GitDelegate was a
-            // success, but it may not have returned the type of update. The Rest call is receiving a 'text/plain'
-            // response and not JSon, so the update type will default to NOT_ATTEMPTED.
-            // See 'GitUpdateRestApiClient.issueRequestAndProcessResponse()'. If we want to skip the rev-walk we
-            // need to ensure res also received a valid update type.
-
-            // Ideally, we should be able to just return res as the safe result - the handler did it after all!!
-            // for now just use this for comparison and remove it before final checkin!!
-            // TODO: trevorg, stuarth Can doReplicatedUpdate/GitDelegate be changed in a low impact way to ensure res
-            //  has an update type already; allowing us to skip this rev-walk?
-            Result verifiedResult = verifyReplicatedUpdate(walk);
-
-            if ( verifiedResult != res )
-            {
-                LOG.debug("Verified RefUpdate result was: {} but replication result was: {}",
-                         verifiedResult.toString(), res.toString());
-            }
-
-            return verifiedResult;
-        }
-
-        return unreplicatedUpdate(walk);
-    }
-
-    private Result verifyReplicatedUpdate(RevWalk walk) throws IOException {
-        ObjectId replicateOldObjID = getReplicationOldObjectId();
-
-        String name = getName();
-        String oldRef = ObjectId.toString(replicateOldObjID);
-        String nullRef = ObjectId.toString(ObjectId.zeroId());
-        if (name.startsWith("refs/meta/config") || name.startsWith("refs/changes/") || oldRef.equals(nullRef)) {
-            //bug in Gerrit, it does not treat a NO_CHANGE event for
-            // config/change updates
-            //as successful. Easier to workaround it here.
-            return Result.NEW;
-        }
-
-        RevObject newObj = null;
-        try {
-            newObj = safeParseNew(walk, newValue);
-        } catch (MissingObjectException e) {
-            return Result.REJECTED_MISSING_OBJECT;
-        }
-
-        RevObject oldObj = safeParseOld(walk, replicateOldObjID);
-        if (newObj instanceof RevCommit && oldObj instanceof RevCommit) {
-            if (walk.isMergedInto((RevCommit) oldObj, (RevCommit) newObj)) {
-                return Result.FAST_FORWARD;
-            } else {
-                return Result.FORCED;
-            }
-        } else if ( newObj instanceof RevBlob && oldObj instanceof RevBlob ){
-            // TODO: trevorg COMPLETE BLOB SUPPORT, we should really work out if its a FAST_FORWARD or a FORCED update.
-            // As this is really only for All-Users refs/sequences updates which are all FORCED updates with no ref-log then
-            // I am assuming forced for now.
-            return Result.FORCED;
-        }
-        return Result.REJECTED;
+        return (shouldReplicateRepository(getRepository())) ?
+               doReplicatedUpdate() :
+               unreplicatedUpdate(walk);
     }
 
     /**
