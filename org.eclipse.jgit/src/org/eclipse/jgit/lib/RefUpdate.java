@@ -677,7 +677,8 @@ public abstract class RefUpdate {
      */
     private ObjectId getReplicationOldObjectId() {
         ObjectId clientOldObjectId = getExpectedOldObjectId();
-        return (clientOldObjectId != null) ? clientOldObjectId : getOldObjectId();
+        return (clientOldObjectId != null) ? clientOldObjectId :
+                getOldObjectId() == null ? ObjectId.zeroId() : getOldObjectId();
     }
 
     /**
@@ -855,7 +856,7 @@ public abstract class RefUpdate {
 
         // This result is not always available currently. As the rp-git-update script returns only 0 for OK, we later
         // use a verification approach to find out what we did.  So we can support null behaviour here for now...
-        Result res = replicateUpdate(user, fsPath, oldRev, newRev, refName, getRepository());
+        Result res = replicateUpdate(user, oldRev, newRev, refName, getRepository());
 
         // force a reload of the ref if the lastModified is within 2.5 seconds of
         // the last time a push was made to the same ref.
@@ -900,9 +901,12 @@ public abstract class RefUpdate {
                 return result;
             }
 
-            doReplicatedUpdate();
+            // TODO: trevorg we had no way to verify by walking as it would have been deleted
+            // as we now return success - lets use the result.
+            result = doReplicatedUpdate();
             // no_change indicates success for a delete...
-            return Result.NO_CHANGE;
+            // return Result.NO_CHANGE;
+            return result;
         }
 
         return unreplicatedDelete(walk);

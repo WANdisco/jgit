@@ -2,9 +2,10 @@ package org.eclipse.jgit.lib;
 
 import com.wandisco.gerrit.gitms.shared.api.exceptions.GitUpdateException;
 import com.wandisco.gerrit.gitms.shared.api.repository.*;
+import com.wandisco.gerrit.gitms.shared.exception.ConfigurationException;
 import com.wandisco.gerrit.gitms.shared.util.ObjectUtils;
-import com.wandisco.gerrit.gitms.shared.util.PackUtils;
 import org.eclipse.jgit.errors.RepositoryAlreadyExistsException;
+import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.util.GitConfiguration;
 import org.eclipse.jgit.util.ReplicationConfiguration;
 import org.eclipse.jgit.util.StringUtils;
@@ -16,8 +17,10 @@ import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import static com.wandisco.gerrit.gitms.shared.api.repository.GitUpdateObjectsFactory.buildUpdateRequestWithPackfile;
 import static org.eclipse.jgit.lib.Constants.REPLICATION_REFUPDATE_LOGGING;
 import static org.eclipse.jgit.lib.Constants.REPLICATION_USE_GIT_UPDATE_SCRIPT;
 import static org.eclipse.jgit.util.ReplicationConfiguration.getOverrideBehaviour;
@@ -39,7 +42,6 @@ public class ReplicatedUpdate {
      * It will actually perform all the work, so we only really check the results on its return.
      *
      * @param user
-     * @param fsPath
      * @param oldRevId
      * @param newRevId
      * @param refName
@@ -47,76 +49,45 @@ public class ReplicatedUpdate {
      * @return RefUpdate result of the update operation.
      * @throws IOException
      */
-    public static RefUpdate.Result replicateUpdate(final String user, final String fsPath,
+    public static RefUpdate.Result replicateUpdate(final String user,
                                                    final ObjectId oldRevId, final ObjectId newRevId,
                                                    final String refName, final Repository repo) throws
             IOException {
-        if (!useRPGitUpdateScript) {
-            // use the new in process gitupdate, which does the verification here using jgit, and makes
-            // the update call via http directly.
-            GitUpdateRequest gitUpdateRequest =
-                    PackUtils
-                            .executePackfileGenerationBeforeReplicationUpdateInProcess(refName, oldRevId, newRevId,
-                                                                                       user,
-                                                                                       fsPath, repo);
-            try {
-                GitUpdateResult result = GitUpdateAccessor.updateRepository(gitUpdateRequest);
+        try {
+            GitUpdateRequest gitUpdateRequest;
 
-                if (result == null) {
-                    StringBuilder sb = new StringBuilder("Unable to find a GitUpdateResult to the update repository call: ");
-                    sb.append(gitUpdateRequest.toString());
-                    logMe(sb.toString());
-                    throw new IOException(sb.toString());
-                }
+            // As we now use objectid, the interface can receive nulls, but to make the coding logic easier - turn
+            // any nulls into EMPTY_SHA now, to ensure it matches all expectations later and in the rp-update-script.
+            final ObjectId oldRev =  oldRevId == null ? ObjectId.zeroId() : oldRevId;
+            final ObjectId newRev = newRevId == null ? ObjectId.zeroId() : newRevId;
 
-                return result.updateResultCode;
-            } catch (GitUpdateException e) {
-                logMe("Exception happened when updating repo: ", e);
-
-                // If we return null here it is not possible to work out what happened.
-                // Due to the call chain we have to wrap as an IOException as it knows
-                // nothing about GitUpdateException.
-                throw new IOException(e);
+            // Take a decision here whether we are to use the rp-git-update script and have it do the packfile
+            // generation for us - or use jgit to do this now. Default is to use jgit but we support the old route
+            // for consistency checking easily.
+            if (!useRPGitUpdateScript) {
+                gitUpdateRequest = buildUpdateRequestWithPackfile(refName, oldRev, newRev,
+                        user, repo);
+            } else {
+                gitUpdateRequest = generatePackfilesRequiredForUpdate(refName, oldRev.getName(),
+                        newRev.getName(), user, repo);
             }
-        }
+            GitUpdateResult result = GitUpdateAccessor.updateRepository(gitUpdateRequest);
 
-        // This is the fallback mechanism we used to use which is to call the update script to do our replication
-        // work / creation of packfile / verification and replication call.
-        final String oldRev = ObjectId.toString(oldRevId);
-        final String newRev = ObjectId.toString(newRevId);
-        replicateUpdateOutOfProcess(user, fsPath, oldRev, newRev, refName);
-        return null;
-    }
+            if (result == null) {
+                StringBuilder sb = new StringBuilder("Unable to find a GitUpdateResult to the update repository call: ");
+                sb.append(gitUpdateRequest.toString());
+                logMe(sb.toString());
+                throw new IOException(sb.toString());
+            }
 
-    /**
-     * Exeutes the replicated update, via the rp-git-update script out of the main java process ( jgit ) by a remote
-     * exec process call.
-     *
-     * @param user
-     * @param fsPath
-     * @param oldRev
-     * @param newRev
-     * @param refName
-     * @throws IOException
-     */
-    private static void replicateUpdateOutOfProcess(final String user, final String fsPath,
-                                                    final String oldRev, final String newRev,
-                                                    final String refName) throws IOException {
-        String[] commandUpdate = {getRpUpdateScript(), refName, oldRev, newRev};
+            return result.updateResultCode;
+        } catch (GitUpdateException | ConfigurationException e) {
+            logMe("Exception happened when updating repo: ", e);
 
-        StringBuilder processOutput = new StringBuilder();
-        Map<String, String> environment = new HashMap<>();
-        environment.put("GIT_DIR", ".");
-        if (!StringUtils.isEmptyOrNull(user)) {
-            environment.put("ACP_USER", user);
-        }
-
-        // this call will block until the update has happened on the local node
-        int returnCode = execProcess(commandUpdate, new File(fsPath), environment, processOutput, null);
-
-        if (returnCode != 0) {
-            // only prepend failure to replicate if we have a failure!!
-            throw new IOException("Failure to replicate: " + processOutput.toString());
+            // If we return null here it is not possible to work out what happened.
+            // Due to the call chain we have to wrap as an IOException as it knows
+            // nothing about GitUpdateException.
+            throw new IOException(e);
         }
     }
 
@@ -125,21 +96,27 @@ public class ReplicatedUpdate {
      * for replication.
      *
      * @param user
-     * @param fsPath
      * @param oldRev
      * @param newRev
      * @param refName
+     * @param repo
      * @return GitUpdateRequest the update request object filled with appropriate information for the replication
      * request.
      * @throws IOException
      */
     public static GitUpdateRequest generatePackfilesRequiredForUpdate(final String user,
-                                                                      final String fsPath,
                                                                       final String oldRev,
                                                                       final String newRev,
-                                                                      final String refName) throws
+                                                                      final String refName,
+                                                                      final Repository repo) throws
             IOException {
-        String[] commandUpdate = {getRpUpdateScript(), "-r", refName, oldRev, newRev};
+
+        if (repo == null) {
+            throw new IOException("Invalid - null repository supplied.");
+        }
+
+        final String[] commandUpdate = {getRpUpdateScript(), "-r", refName, oldRev, newRev};
+        final String fsPath = repo.getDirectory().getAbsolutePath();
 
         StringBuilder processOutput = new StringBuilder();
         Map<String, String> environment = new HashMap<>();
@@ -149,7 +126,7 @@ public class ReplicatedUpdate {
         }
 
         // this call will block until the update has happened on the local node
-        int returnCode = execProcess(commandUpdate, new File(fsPath), environment, processOutput, null);
+        final int returnCode = execProcess(commandUpdate, new File(fsPath), environment, processOutput, null);
 
         if (returnCode != 0) {
             throw new IOException(processOutput.toString());
@@ -163,15 +140,13 @@ public class ReplicatedUpdate {
             throw new IOException("Invalid null json return information from the rp-git-update packfile generation");
         }
 
-        GitUpdateRequest result = ObjectUtils.createObjectFromJson(json, GitUpdateRequest.class);
-        return result;
+        return ObjectUtils.createObjectFromJson(json, GitUpdateRequest.class);
     }
 
     /**
      * Entrypoint to do the replicated update of a batch request.
      *
      * @param user
-     * @param fsPath
      * @param updateRequestList
      * @param repo
      * @return BatchGitUpdateRequestResult a result with the update results of each item in the batch, and an overal
@@ -179,61 +154,33 @@ public class ReplicatedUpdate {
      * @throws IOException
      */
     public static BatchGitUpdateResult replicatedBatchUpdate(final String user,
-                                                             final String fsPath,
-                                                             final BatchGitUpdateRequestsList updateRequestList,
+                                                             final List<ReceiveCommand> updateRequestList,
                                                              final Repository repo)
             throws IOException {
 
-        BatchGitUpdateRequestsList updateRequestsWithPackfiles = new BatchGitUpdateRequestsList();
+        BatchGitUpdateRequest batchGitUpdateRequest = null;
 
-        // Get me a real GitUpdateRequest with the real packfile generated for each item here
-        for (GitUpdateRequest singleUpdate : updateRequestList) {
-            // Get an updated request object.... This will contain the packfile object name generated and the final
-            // GitUpdateRequest to be issued for this command.
-            try {
-                GitUpdateRequest gitUpdateRequest;
-
-                if (!useRPGitUpdateScript) {
-                    // use the new in process gitupdate, which does the verification here using jgit, and makes
-                    // the update verification inprocess along with packfile generation.
-                    gitUpdateRequest =
-                            PackUtils
-                                    .executePackfileGenerationBeforeReplicationUpdateInProcess(singleUpdate.getRefName(),
-                                                                                               ObjectId.fromString(singleUpdate.getOldRev()),
-                                                                                               ObjectId.fromString(singleUpdate.getNewRev()),
-                                                                                               singleUpdate.getUserid(),
-                                                                                               singleUpdate.getGitDir(),
-                                                                                               repo);
-                }
-                else {
-                    gitUpdateRequest = generatePackfilesRequiredForUpdate(singleUpdate.getUserid(),
-                                                                          singleUpdate.getGitDir(),
-                                                                          singleUpdate.getOldRev(),
-                                                                          singleUpdate.getNewRev(),
-                                                                          singleUpdate.getRefName());
-                }
-
-                // now add result to our batch...
-                updateRequestsWithPackfiles.add(gitUpdateRequest);
-            } catch (IOException e) {
-                // Unable to get this items packfile generated.  Either a real IOException on disk, or
-                // Something has failed validation.. Log details and throw.
-                logMe(String.format("Failed to generate part of a batch update request: %s.  Error Details: %s",
-                                    singleUpdate.toString(),
-                                    e.getMessage()));
-                throw e;
-            }
+        try {
+            // This creates the packfile and returns a fully populated request item, in this case for a batch request.
+            // if it was a single GitUpdate it would return same information in a GitUpdaterequest instead.
+            // But we do not issue the request here - only have it built and packfile generated!.
+            batchGitUpdateRequest = buildUpdateRequestWithPackfile(user, updateRequestList, repo);
+        } catch (IOException e) {
+            // Unable to get this items packfile generated.  Either a real IOException on disk, or
+            // Something has failed validation.. Log details and throw.
+            logMe(String.format("Failed to generate batch update request with packfile: %s.  Error Details: %s",
+                    updateRequestList.toString(),
+                    e.getMessage()));
+            throw e;
+        } catch (ConfigurationException e) {
+            // Looks like a GitMS Configuration exception - we cannot go any further.
+            logMe(String.format("Failed to generate batch update request with packfile: %s.  Error Details: %s",
+                    updateRequestList.toString(),
+                    e.getMessage()));
+            throw new IOException("Failed to generate a batch git update request.", e);
         }
 
-        // TODO: trevorg enforce using same user for entire batch, phase1, needs it on all child commands, but really
-        // when atomic it should use this for all!!
-        final String batchUser = StringUtils.isEmptyOrNull(user) ? PackUtils.getDefaultUsername() : user;
-
-        // Create the final BatchRequest and issue it to the GitMS Delegate.
-        BatchGitUpdateRequest batchGitUpdateRequest = new BatchGitUpdateRequest(fsPath,
-                                                                                batchUser,
-                                                                                updateRequestsWithPackfiles);
-
+        // Perform the actual replicated update request now - over REST.
         try {
             BatchGitUpdateResult result = BatchGitUpdateAccessor.updateRepository(batchGitUpdateRequest);
             if (result == null) {
@@ -243,8 +190,12 @@ public class ReplicatedUpdate {
                 throw new IOException(sb.toString());
             }
             return result;
+        } catch (IOException e) {
+            // rethrow raw.
+            throw e;
         } catch (Exception e) {
-            // update repository return an IOException instead of a GitUpdateResult....
+            // Record any update failure as an IOException also - as that is all JGit native was aware of and it prevents
+            // a large update chain of checked exception handling cases.
             throw new IOException(e);
         }
     }
@@ -252,22 +203,30 @@ public class ReplicatedUpdate {
     /**
      * replicatedCreate allows for the creation of a repository on all replicated nodes.  this not only
      * creates the repo but also adds it to the list of governed repos by GitMS.
+     *
      * @param absolutePath
      * @throws IOException
      */
     public static void replicatedCreate(String absolutePath) throws IOException {
-        String port = ReplicationConfiguration.getPort();
-        String timeout = ReplicationConfiguration.getRepoDeployTimeout();
-        String repoPath = null;
+        final String port = ReplicationConfiguration.getPort();
+        final String timeout = ReplicationConfiguration.getRepoDeployTimeout();
 
-        if (port == null || port.isEmpty()) {
+        if (StringUtils.isEmptyOrNull(port)) {
+            throw new IOException("Invalid Replication Setup - no replication port currently configured.");
+        }
+
+        if (StringUtils.isEmptyOrNull(timeout)) {
             throw new IOException("Invalid Replication Setup - no replication port currently configured.");
         }
 
         try {
-            repoPath = URLEncoder.encode(absolutePath, "UTF-8");
+            // TODO: GER-1394 Move this create command into the shared library beside updaterepository REST call.
+            // Keep this logic shared and out of jgit. Should be same as call:
+            // BatchGitUpdateResult result = BatchGitUpdateAccessor.updateRepository(batchGitUpdateRequest);
+
+            final String repoPath = URLEncoder.encode(absolutePath, "UTF-8");
             URL url = new URL("http://127.0.0.1:" + port + "/gerrit/deploy?"
-                              + "timeout=" + timeout + "&repoPath=" + repoPath);
+                    + "timeout=" + timeout + "&repoPath=" + repoPath);
             HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
             httpCon.setDoOutput(true);
             httpCon.setUseCaches(false);
@@ -297,14 +256,14 @@ public class ReplicatedUpdate {
                 // there has been a problem with the deployment
                 throw new RepositoryAlreadyExistsException(
                         "Failure to create the git repository on the GitMS Replicator, response code: "
-                        + response + "Replicator response: "
-                        + responseString.toString());
+                                + response + "Replicator response: "
+                                + responseString.toString());
             }
 
             if (response != 200) {
                 //there has been a problem with the deployment
                 throw new IOException("Failure to create the git repository on the GitMS Replicator, response code: " + response
-                                      + "Replicator response: " + responseString.toString());
+                        + "Replicator response: " + responseString.toString());
             }
 
         } catch (RepositoryAlreadyExistsException ex) {

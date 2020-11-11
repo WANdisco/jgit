@@ -60,9 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.wandisco.gerrit.gitms.shared.api.repository.BatchGitUpdateRequestsList;
 import com.wandisco.gerrit.gitms.shared.api.repository.BatchGitUpdateResult;
-import com.wandisco.gerrit.gitms.shared.api.repository.GitUpdateRequest;
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.LockFailedException;
 import org.eclipse.jgit.errors.MissingObjectException;
@@ -269,41 +267,20 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 		List<ReceiveCommand> toBeReplicatedCommands =
 				ReceiveCommand.filter(pending, NOT_ATTEMPTED);
 
-		// Call to generate a packfile for each of the refupdates we are performing.
-		// now call to jgit to get our packfiles.
-		// TODO: trevorg Check!!
-		// Note we dont need any packfile for DELETES I think...
-		final String fsPath = refdb.getRepository().getDirectory().getAbsolutePath();
-
-		BatchGitUpdateRequestsList atomicReplicationBatch = new BatchGitUpdateRequestsList();
-
-		for (ReceiveCommand c : toBeReplicatedCommands) {
-
-			// consider if we need switch on type?? is delete special, should it be performed first??
-			String oldRev = ObjectId.toString(c.getOldId());
-			String newRev = ObjectId.toString(c.getNewId());
-			String refName = c.getRefName();
-
-			GitUpdateRequest updateRequest = ReplicatedUpdate
-					.generatePackfilesRequiredForUpdate(user, fsPath, oldRev, newRev, refName);
-
-			// this contains the update request and the packfile information to be used....
-			atomicReplicationBatch.add(updateRequest);
-		}
-
 		// Now we have a list of update requests with packfiles make an atomic operation to commit the entire list of
 		// them.
-		if (atomicReplicationBatch.isEmpty()) {
+		if (toBeReplicatedCommands.isEmpty()) {
 			// we have nothing to do - something is wrong as the calling code ive seen all have isEmpty protection
 			// before here....
-			logger.warn("Empty batch of packed ref updates found - returning nothing to do - shouldn't be here?");
+			logger.warn("Empty batch of packed ref updates found original command size: {}  filtered size: {}, return nothing to do.",
+					pending.size(), toBeReplicatedCommands.size());
 			return false;
 		}
 
 		// Send Atomic proposal now, and send over our list of packfile info.
 		BatchGitUpdateResult results =
 				ReplicatedUpdate
-						.replicatedBatchUpdate(user, fsPath, atomicReplicationBatch, refdb.getRepository());
+						.replicatedBatchUpdate(user, toBeReplicatedCommands, refdb.getRepository());
 
 		return results != null;
 	}
