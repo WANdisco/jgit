@@ -64,8 +64,11 @@ import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.transport.PushCertificate;
+import org.eclipse.jgit.util.ConfigReader;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -90,7 +93,11 @@ import java.util.Properties;
  * Creates, updates or deletes any reference.
  */
 public abstract class RefUpdate {
-  /** Status of an update request. */
+
+  private final static Logger LOG = LoggerFactory
+			.getLogger(RefUpdate.class);
+
+	/** Status of an update request. */
   public static enum Result {
    /** The ref update/delete has not been attempted by the caller. */
    NOT_ATTEMPTED,
@@ -216,7 +223,11 @@ public abstract class RefUpdate {
 
 	private boolean checkConflicting = true;
 
-  private static final boolean logMeEnabled = false;
+	private static final boolean logMeEnabled = false;
+
+	private static String RP_UPDATE_HOOK = null;
+
+	private static final String RP_UPDATE_HOOK_DEFAULT = "rp-git-update";
 
   /**
    * Construct a new update operation for the reference.
@@ -641,46 +652,23 @@ public abstract class RefUpdate {
    * @return The name of the update script including path if it exists in the
    *         git config, the default 'rp-git-update' which should exist on the
    *         path otherwise.
-   * @throws IOException
-   *           git config could not be read or is incorrect format.
    */
-  private static String getRpUpdateScript() throws IOException {
-    return getGitConfigProperty("core",null,"rpupdatehook","rp-git-update") ;
+  private static synchronized String getRpUpdateScript()  {
+	if (RP_UPDATE_HOOK != null) {
+		return RP_UPDATE_HOOK;
+	}
+
+	try {
+		RP_UPDATE_HOOK = ConfigReader.getGitConfigProperty("core", null, "rpupdatehook", RP_UPDATE_HOOK_DEFAULT);
+	}
+	catch (IOException e) {
+		LOG.warn("Failed to read rpupdatehook value from config.  Assuming default value.", e);
+		RP_UPDATE_HOOK = RP_UPDATE_HOOK_DEFAULT;
+	}
+
+  	return RP_UPDATE_HOOK;
   }
 
-  /**
-   * The git config file to be used can defined using the GIT_CONFIG environment
-   * variable, if this is not set the current user's .gitconfig file is used.
-   *
-   * @return The requested name found the the section/subsection of the git config
-   *         or the given default if not found
-   * @throws IOException
-   *           git config could not be read or is incorrect format.
-   */
-  private static String getGitConfigProperty(String section, String subsection, String name, String defaultName) throws IOException {
-    String gitConfigLoc = System.getenv("GIT_CONFIG");
-
-    if (System.getenv("GIT_CONFIG") == null) {
-      gitConfigLoc = System.getProperty("user.home") + "/.gitconfig";
-    }
-
-    FileBasedConfig config = new FileBasedConfig(new File(gitConfigLoc), FS.DETECTED);
-    try {
-      config.load();
-    } catch (ConfigInvalidException e) {
-      // Configuration file is not in the valid format, throw exception back.
-      throw new IOException(e);
-    }
-
-    String configScript = config.getString(section,subsection,name);
-
-    if (configScript != null && new File(configScript).exists()) {
-      return configScript;
-    } else {
-      return defaultName;
-    }
-
-  }
 
   /**
    * log utility to be used for debug purposes
