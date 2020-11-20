@@ -89,13 +89,13 @@ import org.eclipse.jgit.internal.storage.pack.PackWriter;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Config;
-import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectDatabase;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.RepositoryCache;
 import org.eclipse.jgit.lib.RepositoryCache.FileKey;
+import org.eclipse.jgit.util.ConfigReader;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.FileUtils;
 import org.slf4j.Logger;
@@ -128,6 +128,17 @@ public class ObjectDirectory extends FileObjectDatabase {
 
 	/** Maximum number of candidates offered as resolutions of abbreviation. */
 	private static final int RESOLVE_ABBREV_LIMIT = 256;
+
+	private static final int PACKED_OBJECT_RESCAN_COUNT_DEFAULT = -1;
+
+	private static final int PACKED_OBJECT_RESCAN_SIMPLIFIED = 0;
+
+	/** Used to rescan packed objects if they failed to be read in first scan
+	 * a value of -1 indicates that no rescan should occur and just use existing logic.
+	 */
+	private static int PACKED_OBJECT_RESCAN_COUNT = PACKED_OBJECT_RESCAN_COUNT_DEFAULT;
+
+	private static boolean SCAN_COUNT_INITIALIZED = false;
 
 	private final Config config;
 
@@ -423,21 +434,49 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return null;
 	}
 
+	private synchronized int getRescanCount() {
+
+		if (SCAN_COUNT_INITIALIZED) {
+			return PACKED_OBJECT_RESCAN_COUNT;
+		}
+		try {
+			PACKED_OBJECT_RESCAN_COUNT = Integer.parseInt(
+					ConfigReader.getGitConfigProperty("wdjgit", null,
+					"rescanCount", Integer.toString(PACKED_OBJECT_RESCAN_COUNT_DEFAULT)));
+		} catch (IOException | NumberFormatException e) {
+			LOG.warn("Failed to read pack object rescan count from config.  Assuming default behaviour.", e);
+			PACKED_OBJECT_RESCAN_COUNT = PACKED_OBJECT_RESCAN_COUNT_DEFAULT;
+		} finally {
+			SCAN_COUNT_INITIALIZED = true;
+		}
+		return PACKED_OBJECT_RESCAN_COUNT;
+	}
+
+
 	ObjectLoader openPackedObject(WindowCursor curs, AnyObjectId objectId) {
+
+		int rescanCount = (SCAN_COUNT_INITIALIZED == true ? PACKED_OBJECT_RESCAN_COUNT : getRescanCount());
+
+		if (rescanCount > 0) {
+			return openPackedObjectFinite(curs, objectId, PACKED_OBJECT_RESCAN_COUNT);
+		} else if (rescanCount == PACKED_OBJECT_RESCAN_SIMPLIFIED) {
+			return openPackedObjectSimplified(curs, objectId);
+		}
+
+		// process as normal
 		PackList pList;
 		do {
-			SEARCH: for (;;) {
+			SEARCH:
+			for (; ; ) {
 				pList = packList.get();
 				for (PackFile p : pList.packs) {
 					try {
 						ObjectLoader ldr = p.get(curs, objectId);
 						p.resetTransientErrorCount();
-						if (ldr != null)
-							return ldr;
+						if (ldr != null) { return ldr; }
 					} catch (PackMismatchException e) {
 						// Pack was modified; refresh the entire pack list.
-						if (searchPacksAgain(pList))
-							continue SEARCH;
+						if (searchPacksAgain(pList)) { continue SEARCH; }
 					} catch (IOException e) {
 						handlePackError(e, p);
 					}
@@ -445,6 +484,69 @@ public class ObjectDirectory extends FileObjectDatabase {
 				break SEARCH;
 			}
 		} while (searchPacksAgain(pList));
+		return null;
+	}
+
+	private ObjectLoader openPackedObjectFinite(WindowCursor curs, AnyObjectId objectId, int rescanCount) {
+		ObjectLoader ldr = null;
+		for (int count = 0; count < rescanCount; count++) {
+			ldr = openPackedObjectWithRetry(curs, objectId);
+			if (ldr != null) {
+				return ldr;
+			}
+		}
+		return null;
+	}
+
+	private ObjectLoader openPackedObjectSimplified(WindowCursor curs, AnyObjectId objectId) {
+		ObjectLoader ldr = null;
+		do {
+			ldr = openPackedObjectWithRetry(curs, objectId);
+			if (ldr != null) {
+				return ldr;
+			}
+		} while (searchPacksAgain(packList.get()));
+
+		return null;
+	}
+
+	ObjectLoader openPackedObjectWithRetry(WindowCursor curs, AnyObjectId objectId) {
+		PackList pList = packList.get();
+		List<String> packNamesToRetry = new ArrayList<>();
+		for (PackFile p : pList.packs) {
+			try {
+				ObjectLoader ldr = p.get(curs, objectId);
+				p.resetTransientErrorCount();
+				if (ldr != null) { return ldr; }
+			} catch (PackMismatchException e) {
+				// Pack was modified; refresh the entire pack list.
+				packNamesToRetry.add(p.getPackName());
+			} catch (IOException e) {
+				handlePackError(e, p);
+				packNamesToRetry.add(p.getPackName());
+			}
+		}
+
+		for (String packName : packNamesToRetry) {
+			// refresh the packs
+			pList = packList.get();
+			for (PackFile pf : pList.packs) {
+				// only load the object if it is one of the ones we are looking for
+				if (pf.getPackName().equals(packName)) {
+					try {
+						ObjectLoader ldr = pf.get(curs, objectId);
+						pf.resetTransientErrorCount();
+						if (ldr != null) { return ldr; }
+					} catch (PackMismatchException e) {
+						// NOTHING TO DO
+
+					} catch (IOException ex) {
+						handlePackError(ex, pf);
+					}
+				}
+			}
+		}
+
 		return null;
 	}
 
