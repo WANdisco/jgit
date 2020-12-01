@@ -71,6 +71,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
@@ -568,14 +569,12 @@ public class BatchRefUpdate {
                                                 } else {
                                                   cmd.setResult(rud.unreplicatedDelete(walk));
                                                 }
-						
 					}
 				}
 			} catch (IOException err) {
-				cmd.setResult(
-						REJECTED_OTHER_REASON,
-						MessageFormat.format(JGitText.get().lockError,
-								err.getMessage()));
+				final Throwable rootCause = ExceptionUtils.getRootCause(err);
+				cmd.setResult(REJECTED_OTHER_REASON,
+							  MessageFormat.format(JGitText.get().lockError, rootCause.getMessage()));
 			}
 		}
 
@@ -616,7 +615,7 @@ public class BatchRefUpdate {
 							} else {
 								cmd.setResult(ru.unreplicatedUpdate(walk));
 							}
-							
+
 							break;
 						case CREATE:
 							for (String prefix : getPrefixes(cmd.getRefName())) {
@@ -640,8 +639,9 @@ public class BatchRefUpdate {
 						}
 					}
 				} catch (IOException err) {
-					cmd.setResult(REJECTED_OTHER_REASON, MessageFormat.format(
-							JGitText.get().lockError, err.getMessage()));
+					final Throwable rootCause = ExceptionUtils.getRootCause(err);
+					cmd.setResult(REJECTED_OTHER_REASON,
+								  MessageFormat.format(JGitText.get().lockError, rootCause.getMessage()));
 				} finally {
 					monitor.update(1);
 				}
