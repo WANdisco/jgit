@@ -439,6 +439,7 @@ public class ObjectDirectory extends FileObjectDatabase {
 		if (SCAN_COUNT_INITIALIZED) {
 			return PACKED_OBJECT_RESCAN_COUNT;
 		}
+
 		try {
 			PACKED_OBJECT_RESCAN_COUNT = Integer.parseInt(
 					ConfigReader.getGitConfigProperty("wdjgit", null,
@@ -484,17 +485,22 @@ public class ObjectDirectory extends FileObjectDatabase {
 				break SEARCH;
 			}
 		} while (searchPacksAgain(pList));
+
 		return null;
 	}
 
 	private ObjectLoader openPackedObjectFinite(WindowCursor curs, AnyObjectId objectId, int rescanCount) {
 		ObjectLoader ldr = null;
-		for (int count = 0; count < rescanCount; count++) {
+		int count = 0;
+		do {
 			ldr = openPackedObjectWithRetry(curs, objectId);
 			if (ldr != null) {
 				return ldr;
 			}
-		}
+			count++;
+
+		} while ((count < rescanCount) && searchPacksAgain(packList.get()));
+
 		return null;
 	}
 
