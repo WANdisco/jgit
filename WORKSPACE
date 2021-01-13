@@ -124,9 +124,9 @@ maven_jar(
 )
 
 maven_jar(
-    name = "log4j-slf4j-impl",
-    artifact = "org.apache.logging.log4j:log4j-slf4j-impl:2.14.0",
-    sha1 = "d6003a3b3f24fdb476848f4ecabdb2a43354e410",
+    name = "slf4j-log4j12",
+    artifact = "org.slf4j:slf4j-log4j12:1.7.5",
+    sha1 = "6edffc576ce104ec769d954618764f39f0f0f10d",
 )
 
 maven_jar(
