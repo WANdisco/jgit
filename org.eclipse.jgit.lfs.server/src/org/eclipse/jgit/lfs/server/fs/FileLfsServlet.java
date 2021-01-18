@@ -184,8 +184,8 @@ public class FileLfsServlet extends HttpServlet {
 		}
 		// As we are using toJson by default indicate correct content type, otherwise it could be thought
 		// of as txt.
-		rsp.setContentType("application/json");
 		rsp.reset();
+		rsp.setContentType("application/json");
 		rsp.setStatus(status);
 		try (PrintWriter writer = rsp.getWriter()) {
 			LfsGson.toJson(message, writer);
