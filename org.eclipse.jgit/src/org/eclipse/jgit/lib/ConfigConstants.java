@@ -225,6 +225,25 @@ public final class ConfigConstants {
 	public static final String CONFIG_KEY_PACKED_GIT_OPENFILES = "packedgitopenfiles";
 
 	/**
+	 * The "packedGitOpenFilesCacheCleanEnabled" key
+	 * @since 5.1.13
+	 */
+	public static final String CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_ENABLED =
+			"packedgitopenfilescachecleanenabled";
+
+	/**
+	 * The "packedGitOpenFilesCacheCleanDelay" key
+	 * @since 5.1.13
+	 */
+	public static final String CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_DELAY = "packedgitopenfilescachecleandelay";
+
+	/**
+	 * The "packedGitOpenFilesCacheCleanPeriod" key
+	 * @since 5.1.13
+	 */
+	public static final String CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_PEROD = "packedgitopenfilescachecleanperiod";
+
+	/**
 	 * The "packedGitUseStrongRefs" key
 	 * @since 5.1.13
 	 */

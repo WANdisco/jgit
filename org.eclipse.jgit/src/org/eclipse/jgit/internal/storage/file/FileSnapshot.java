@@ -233,7 +233,7 @@ public class FileSnapshot {
 	 * Object that uniquely identifies the given file, or {@code
 	 * null} if a file key is not available
 	 */
-	private final Object fileKey;
+	protected final Object fileKey;
 
 	private final File file;
 
