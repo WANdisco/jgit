@@ -114,6 +114,7 @@ public class PackFileTest extends LocalDiskRepositoryTestCase {
 
 		WindowCacheConfig cfg = new WindowCacheConfig();
 		cfg.setStreamFileThreshold(streamThreshold);
+		cfg.setPackedGitOpenFilesCacheCleanEnabled(false);
 		cfg.install();
 
 		repo = createBareRepository();

@@ -380,6 +380,8 @@ public class WindowCache {
 
 	private static volatile WindowCache cache;
 
+	private static volatile Timer windowCacheCleanerTimer;
+
 	private static volatile int streamFileThreshold;
 
 	static {
@@ -410,12 +412,14 @@ public class WindowCache {
 		streamFileThreshold = cfg.getStreamFileThreshold();
 		DeltaBaseCache.reconfigure(cfg);
 
+		final Timer timer = windowCacheCleanerTimer;
+		if (timer != null) {
+			timer.cancel();
+		}
+
 		if (cfg.isPackedGitOpenFilesCacheCleanEnabled()) {
-			LOG.info("WindowCacheCleaner task enabled, scheduling with delay: [{}ms] and period [{}ms]",
-			         cfg.getPackedGitOpenFilesCacheCleanDelay(),
-			         cfg.getPackedGitOpenFilesCacheCleanPeriod());
-			Timer timer = new Timer("WindowCacheCleaner", true);
-			timer.scheduleAtFixedRate(new WindowCacheCleaner(),
+			windowCacheCleanerTimer = new Timer("WindowCacheCleaner", true);
+			windowCacheCleanerTimer.scheduleAtFixedRate(new WindowCacheCleaner(cfg),
 			                          cfg.getPackedGitOpenFilesCacheCleanDelay(),
 			                          cfg.getPackedGitOpenFilesCacheCleanPeriod());
 		}
@@ -1093,10 +1097,24 @@ public class WindowCache {
 	 */
 	static final class WindowCacheCleaner extends TimerTask {
 
-		WindowCacheCleaner() { }
+		private final WindowCacheConfig cfg;
+
+		private boolean firstRun;
+
+		WindowCacheCleaner(WindowCacheConfig cfg) {
+			this.cfg = cfg;
+			this.firstRun = true;
+		}
 
 		@Override
 		public void run() {
+			if (firstRun) {
+				LOG.info("WindowCacheCleaner task enabled, scheduling with delay: [{}ms] and period [{}ms]",
+				         cfg.getPackedGitOpenFilesCacheCleanDelay(),
+				         cfg.getPackedGitOpenFilesCacheCleanPeriod());
+				firstRun = false;
+			}
+
 			LOG.info("Starting WindowCacheCleaner task.");
 
 			long startTime = System.currentTimeMillis();

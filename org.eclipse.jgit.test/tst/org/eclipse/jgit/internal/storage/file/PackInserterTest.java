@@ -100,6 +100,7 @@ public class PackInserterTest extends RepositoryTestCase {
 	@Before
 	public void setWindowCacheConfig() {
 		origWindowCacheConfig = new WindowCacheConfig();
+		origWindowCacheConfig.setPackedGitOpenFilesCacheCleanEnabled(false);
 		origWindowCacheConfig.install();
 	}
 

@@ -175,7 +175,7 @@ public class WindowCacheGetTest extends SampleDataRepositoryTestCase {
 		WindowCacheStats s = cache.getStats();
 		s.resetCounters();
 
-		new WindowCache.WindowCacheCleaner().run();
+		new WindowCache.WindowCacheCleaner(cfg).run();
 
 		doCacheTestsAfterCacheClean();
 
