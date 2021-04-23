@@ -150,9 +150,9 @@ public class GC {
 
 	private static final String KEEP_EXT = "." + PackExt.KEEP.getExtension(); //$NON-NLS-1$
 
-	private static final int DEFAULT_AUTOPACKLIMIT = 50;
+	private static final int DEFAULT_AUTOPACKLIMIT = 0;
 
-	private static final int DEFAULT_AUTOLIMIT = 6700;
+	private static final int DEFAULT_AUTOLIMIT = 0;
 
 	private static volatile ExecutorService executor;
 

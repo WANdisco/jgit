@@ -97,6 +97,16 @@ Warnings/Caveats
 - We try to use the same notation of $HOME as C Git does. On Windows
   this is often not the same value as the user.home system property.
 
+Replicated JGit Configuration Defaults
+----------------
+This fork of JGit has altered some of the default internal configuration values.
+Default configurations have been updated to the following:
+* gc.auto = 0
+* gc.autopacklimit = 0
+* gc.autoDetach = false
+* receive.autogc = false
+
+The WindowCacheConfig has also been enhanced to read global git configuration by default.
 
 Package Features
 ----------------

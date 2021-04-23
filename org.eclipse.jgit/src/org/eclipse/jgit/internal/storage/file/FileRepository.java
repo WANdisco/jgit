@@ -612,7 +612,7 @@ public class FileRepository extends Repository {
 
     private boolean shouldAutoDetach() {
         return getConfig().getBoolean(ConfigConstants.CONFIG_GC_SECTION,
-                ConfigConstants.CONFIG_KEY_AUTODETACH, true);
+                ConfigConstants.CONFIG_KEY_AUTODETACH, false);
     }
 
     /**
