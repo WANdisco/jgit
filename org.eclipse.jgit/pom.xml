@@ -102,6 +102,11 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
+      <dependency>
+          <groupId>commons-lang</groupId>
+          <artifactId>commons-lang</artifactId>
+          <version>2.6</version>
+      </dependency>
       <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
       really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
       scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
@@ -111,6 +116,12 @@
           <groupId>com.wandisco</groupId>
           <artifactId>gerrit-gitms-interface</artifactId>
           <scope>provided</scope>
+          <exclusions>
+              <exclusion>
+                  <groupId>commons-lang</groupId>
+                  <artifactId>commons-lang</artifactId>
+              </exclusion>
+          </exclusions>
       </dependency>
   </dependencies>
 

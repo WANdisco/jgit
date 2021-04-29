@@ -106,6 +106,12 @@ maven_jar(
 )
 
 maven_jar(
+    name = "commons-lang",
+    artifact = "commons-lang:commons-lang:2.6",
+    sha1 = "0ce1edb914c94ebc388f086c6827e8bdeec71ac2",
+)
+
+maven_jar(
     name = "jcl-over-slf4j",
     artifact = "org.slf4j:jcl-over-slf4j:1.7.5",
     sha1 = "0cd5970bd13fa85f7bed41ca606d6daf7cbf1365",
