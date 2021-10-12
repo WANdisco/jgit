@@ -63,7 +63,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
     <packaging>pom</packaging>
-    <version>5.1.15-WDv2-SNAPSHOT</version>
+    <version>5.1.16-WDv1-SNAPSHOT</version>
 
     <name>JGit - Parent</name>
     <url>${jgit-url}</url>
@@ -1034,8 +1034,7 @@ Copyright (c) 2018 Contributors to the Eclipse Foundation
         <profile>
             <id>build-server</id>
             <properties>
-                <jgit.website.url>file:///home/data/httpd/download.eclipse.org/jgit/site/${project.version}/
-                </jgit.website.url>
+                <jgit.website.url>file:///home/data/httpd/download.eclipse.org/jgit/site/${project.version}/</jgit.website.url>
             </properties>
         </profile>
     </profiles>

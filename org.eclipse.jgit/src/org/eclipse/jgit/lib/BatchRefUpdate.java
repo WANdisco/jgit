@@ -58,7 +58,6 @@ package org.eclipse.jgit.lib;
 
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.NOT_ATTEMPTED;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_OTHER_REASON;
-import static java.util.stream.Collectors.toCollection;
 
 import java.io.IOException;
 import java.text.MessageFormat;
@@ -75,7 +74,6 @@ import org.apache.commons.lang.exception.ExceptionUtils;
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.lib.RefUpdate.Result;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.PushCertificate;
 import org.eclipse.jgit.transport.ReceiveCommand;
@@ -564,11 +562,11 @@ public class BatchRefUpdate {
 					case DELETE:
 						RefUpdate rud = newUpdate(cmd);
 						monitor.update(1);
-                                                if (replicated) {
-                                                  cmd.setResult(rud.delete(walk));
-                                                } else {
-                                                  cmd.setResult(rud.unreplicatedDelete(walk));
-                                                }
+						if (replicated) {
+							cmd.setResult(rud.delete(walk));
+						} else {
+							cmd.setResult(rud.unreplicatedDelete(walk));
+						}
 					}
 				}
 			} catch (IOException err) {
@@ -584,14 +582,7 @@ public class BatchRefUpdate {
 		// So its critical to work out if we have more than 1 command here,
 		// also note phase 1 delete could have added to this.. ARG!!
 		if (!commands2.isEmpty()) {
-
-			// What part of the name space is already taken
-			Collection<String> takenNames = refdb.getRefs().stream()
-					.map(Ref::getName)
-					.collect(toCollection(HashSet::new));
-			Collection<String> takenPrefixes = getTakenPrefixes(takenNames);
-
-			// Now to the update that may require more room in the name space
+			// Perform updates that may require more room in the name space
 			for (ReceiveCommand cmd : commands2) {
 				// regardless of the command being issued, if we have been given a username, we better make it
 				// available for each sub command being issued, otherwise it would be lost after the first command as
@@ -604,38 +595,26 @@ public class BatchRefUpdate {
 					if (cmd.getResult() == NOT_ATTEMPTED) {
 						cmd.updateType(walk);
 						RefUpdate ru = newUpdate(cmd);
-						SWITCH: switch (cmd.getType()) {
+						switch (cmd.getType()) {
 						case DELETE:
 							// Performed in the first phase
 							break;
 						case UPDATE:
 						case UPDATE_NONFASTFORWARD:
+						    RefUpdate ruu = newUpdate(cmd);
+							if (replicated) {
+								cmd.setResult(ruu.update(walk));
+							} else {
+								cmd.setResult(ruu.unreplicatedUpdate(walk));
+							}
+							break;
+						case CREATE:
 							if (replicated) {
 								cmd.setResult(ru.update(walk));
 							} else {
 								cmd.setResult(ru.unreplicatedUpdate(walk));
 							}
-
 							break;
-						case CREATE:
-							for (String prefix : getPrefixes(cmd.getRefName())) {
-								if (takenNames.contains(prefix)) {
-									cmd.setResult(Result.LOCK_FAILURE);
-									break SWITCH;
-								}
-							}
-							if (takenPrefixes.contains(cmd.getRefName())) {
-								cmd.setResult(Result.LOCK_FAILURE);
-								break SWITCH;
-							}
-							ru.setCheckConflicting(false);
-							takenPrefixes.addAll(getPrefixes(cmd.getRefName()));
-							takenNames.add(cmd.getRefName());
-							if (replicated) {
-							  cmd.setResult(ru.update(walk));
-							} else {
-							  cmd.setResult(ru.unreplicatedUpdate(walk));
-							}
 						}
 					}
 				} catch (IOException err) {
@@ -706,14 +685,6 @@ public class BatchRefUpdate {
 	public void execute(RevWalk walk, ProgressMonitor monitor)
 			throws IOException {
 		execute(walk, monitor, null);
-	}
-
-	private static Collection<String> getTakenPrefixes(Collection<String> names) {
-		Collection<String> ref = new HashSet<>();
-		for (String name : names) {
-			addPrefixesTo(name, ref);
-		}
-		return ref;
 	}
 
 	/**
