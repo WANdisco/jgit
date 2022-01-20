@@ -540,7 +540,7 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 		if (matchesNewState > 0 && matchesOldState > 0 ||
 			(!(matchesNewState == commands.size() || matchesOldState == commands.size()))) {
 			logger.error("applyUpdates: Applying refDB updates failed due to having mixed repository state.  " +
-						 "NumCommands: %d, NumMatchingOldState: %d, NumMatchingNewState: %d", commands.size(),
+						 "NumCommands: {}, NumMatchingOldState: {}, NumMatchingNewState: {}", commands.size(),
 						 matchesOldState, matchesNewState);
 			assert failureCmd != null;
 			lockFailure(failureCmd, commands);
@@ -548,7 +548,7 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 		}
 
 		logger.debug("applyUpdates: Applying refDB updates succeeded" +
-					 " NumCommands: %d, NumMatchingOldState: %d, NumMatchingNewState: %d",
+					 " NumCommands: {}, NumMatchingOldState: {}, NumMatchingNewState: {}",
 					 commands.size(), matchesOldState, matchesNewState);
 		return b.toRefList();
 	}
