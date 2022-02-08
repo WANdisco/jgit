@@ -252,6 +252,23 @@ public class ReplicationConfiguration {
     }
 
     /**
+     * Get replicated disable retry on CREATE on special refName matches.
+     * Defaults to ^refs/tags/*
+     *
+     * @return String value of the reference name to be matched.
+     */
+    public static String getDisableRetryMixedStateReferenceMatch() {
+        final String defaultValue = "^refs\\/tags\\/.+";
+        try {
+            return getProperty("gitms.disable.retry.mixed.state.reference", defaultValue);
+        } catch (IOException e) {
+            // unsure what has happened, just return the default and continue.
+            return defaultValue;
+        }
+    }
+
+
+    /**
      * Get replicated repo deployment timeout value for requests.
      *
      * @return String value of the timeout ,or the default timeout.

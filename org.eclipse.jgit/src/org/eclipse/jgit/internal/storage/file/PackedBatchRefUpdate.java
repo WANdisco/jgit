@@ -44,14 +44,17 @@
 package org.eclipse.jgit.internal.storage.file;
 
 import static java.util.stream.Collectors.toList;
+import static org.eclipse.jgit.lib.Constants.REPLICATION_MIXED_REPOSITORY_FAILURE_REASON;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.LOCK_FAILURE;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.NOT_ATTEMPTED;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_NONFASTFORWARD;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_OTHER_REASON;
+import static org.eclipse.jgit.util.ReplicationConfiguration.getDisableRetryMixedStateReferenceMatch;
 import static org.eclipse.jgit.util.ReplicationConfiguration.shouldReplicateRepository;
 
 import java.io.IOException;
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -59,6 +62,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.wandisco.gerrit.gitms.shared.api.repository.BatchGitUpdateResult;
 import org.eclipse.jgit.annotations.Nullable;
@@ -475,8 +480,15 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 		// as they can't lock the old initial state.  We want to allow this ONLY if all the items are either in the
 		// old state and moving to the new state, or all items are in the new state and its a NO_CHANGE across entire
 		// atomic operation set.
+		// N.B. There now is one exception to this rule - if we receive a CREATE command any the item has been protected by a
+		// cache in gerrit it is possible for us to receive commands to create items which already exist but the cache
+		// couldn't actually see for that user.  In that case we could have some old state and the repo actually have
+		// that tag in the new state ( mixed state ).  We still do not allow this to succeed, but we wish to indicate
+		// it differently to the user to allow NON retry - simple failure case to happen.
 		int matchesOldState = 0;
 		int matchesNewState = 0;
+		List<ReceiveCommand> cmdsInSpecialNewStateList = new ArrayList(commands.size());
+
 		ReceiveCommand failureCmd = null;
 		while (refIdx < refs.size() || cmdIdx < commands.size()) {
 			Ref ref = (refIdx < refs.size()) ? refs.get(refIdx) : null;
@@ -514,6 +526,14 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 					if (cmd.getNewId().equals(ref.getObjectId())) {
 						// We are already in this state... Just add the ref as is to the list, and bump counter.
 						matchesNewState++;
+
+						// Add this command if it matches to our cmds in this special state list
+						if (cmd.getType() == ReceiveCommand.Type.CREATE &&
+								matchesSpecialHiddenReference(cmd.getRefName())) {
+							// Consider addition regex filter for (^ref/tags/.+)
+							cmdsInSpecialNewStateList.add(cmd);
+						}
+
 						// take a copy of the first failure command, if we find a mismatch at the end we want to throw
 						// the first which would have failed just as before our change...
 						if (failureCmd == null) {
@@ -535,15 +555,31 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 			}
 		}
 
-		// Now before we accept this list, we may be raised a lock failure if for some reason we dont have all of our
-		// commands present as either all new or all old state.
+		// Now before we accept this list, we need to work out and protect idempotent operations.
+		// If we aren't all in old or all in new state we need to fail and normally retry.
+		// Exception to this is detailed below where hidden from user tags may issue a mixed state BatchUpdate.
 		if (matchesNewState > 0 && matchesOldState > 0 ||
 			(!(matchesNewState == commands.size() || matchesOldState == commands.size()))) {
 			logger.error("applyUpdates: Applying refDB updates failed due to having mixed repository state.  " +
-						 "NumCommands: {}, NumMatchingOldState: {}, NumMatchingNewState: {}", commands.size(),
-						 matchesOldState, matchesNewState);
+							"NumCommands: {}, NumMatchingOldState: {}, NumMatchingNewState: {} SpecialCreateCommandsInNewState: {}", commands.size(),
+					matchesOldState, matchesNewState, cmdsInSpecialNewStateList);
 			assert failureCmd != null;
-			lockFailure(failureCmd, commands);
+
+			// if we have any of the items in the filtered special commands list, then
+			// indicate a new type of lock failure - where retry will NOT help or fix it.
+			if (!cmdsInSpecialNewStateList.isEmpty()) {
+				// indicate REJECTED_OTHER_REASON as we are already in partial new state for all FILTERED commands,
+				// but as it states above we had a mismatch so some where still in OLD state.
+				// Now this may not be the actual first failed command in the list, but as this is special and we can't
+				// retry because of it, I am failing this command - or we may attempt to retry!.
+				final ReceiveCommand firstFailedSpecialCommand = cmdsInSpecialNewStateList.get(0);
+
+				reject(firstFailedSpecialCommand, REJECTED_OTHER_REASON, REPLICATION_MIXED_REPOSITORY_FAILURE_REASON, commands);
+				logger.warn("applyUpdates: Applying refDB updates failed due to an existing reference which may be hidden " +
+						"from the user cache on command:  {}", firstFailedSpecialCommand.toString());
+			} else {
+				lockFailure(failureCmd, commands);
+			}
 			return null;
 		}
 
@@ -551,6 +587,23 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 					 " NumCommands: {}, NumMatchingOldState: {}, NumMatchingNewState: {}",
 					 commands.size(), matchesOldState, matchesNewState);
 		return b.toRefList();
+	}
+
+	private final static String SPECIAL_REJECT_MIXED_STATE_REFNAME_REGEX = getDisableRetryMixedStateReferenceMatch();
+
+	/**
+	 * Simple matcher - if it matches the special refname e.g. refs/tags/.*
+	 *
+	 * @param refName
+	 * @return True indicates match. Otherwise false.
+	 */
+	private static boolean matchesSpecialHiddenReference(final String refName ){
+
+		// NV-8764: Special case - match any refs/tags/* CREATE command in a mixed state, we might need
+		// to make this wider scope in future.
+		final Pattern pattern = Pattern.compile(SPECIAL_REJECT_MIXED_STATE_REFNAME_REGEX);
+		final Matcher matcher = pattern.matcher(refName);
+		return matcher.matches();
 	}
 
 	private void writeReflog(List<ReceiveCommand> commands) {

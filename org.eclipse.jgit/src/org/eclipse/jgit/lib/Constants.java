@@ -404,6 +404,14 @@ public final class Constants {
 	public static final String REPLICATION_REFUPDATE_LOGGING = "gitms_ref_update_logging";  // DEV USE ONLY
 
 	/**
+	 * Detailed reason about what happens when Gerrit supplies an operation to jgit which has been hidden from the user
+	 * by the gerrit cache, but already exists in Jgit repo.  So e.g. tag created then hidden by ACL rules, as they can
+	 * create tags, but not see them(this is without change to acl after the fact).  It then can recieve mixed batch
+	 * update operations with repo in old and new state for different commands at the same time.
+	 */
+	public static final String REPLICATION_MIXED_REPOSITORY_FAILURE_REASON = "Applying ref updates failed due to a mixed repository state, please obtain a fresh clone and try again.";
+
+	/**
 	 * Name of the attributes file
 	 *
 	 * @since 3.7
