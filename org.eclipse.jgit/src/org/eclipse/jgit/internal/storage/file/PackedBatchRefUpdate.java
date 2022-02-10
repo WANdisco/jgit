@@ -590,6 +590,7 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 	}
 
 	private final static String SPECIAL_REJECT_MIXED_STATE_REFNAME_REGEX = getDisableRetryMixedStateReferenceMatch();
+	private final static Pattern pattern = Pattern.compile(SPECIAL_REJECT_MIXED_STATE_REFNAME_REGEX);
 
 	/**
 	 * Simple matcher - if it matches the special refname e.g. refs/tags/.*
@@ -598,10 +599,8 @@ class PackedBatchRefUpdate extends BatchRefUpdate {
 	 * @return True indicates match. Otherwise false.
 	 */
 	private static boolean matchesSpecialHiddenReference(final String refName ){
-
 		// NV-8764: Special case - match any refs/tags/* CREATE command in a mixed state, we might need
 		// to make this wider scope in future.
-		final Pattern pattern = Pattern.compile(SPECIAL_REJECT_MIXED_STATE_REFNAME_REGEX);
 		final Matcher matcher = pattern.matcher(refName);
 		return matcher.matches();
 	}
