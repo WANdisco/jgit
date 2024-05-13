@@ -84,6 +84,7 @@ public class ConcurrentRepackTest extends RepositoryTestCase {
 	public void setUp() throws Exception {
 		WindowCacheConfig windowCacheConfig = new WindowCacheConfig();
 		windowCacheConfig.setPackedGitOpenFiles(1);
+		windowCacheConfig.setPackedGitOpenFilesCacheCleanEnabled(false);
 		windowCacheConfig.install();
 		super.setUp();
 	}

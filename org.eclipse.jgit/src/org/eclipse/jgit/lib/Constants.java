@@ -379,6 +379,38 @@ public final class Constants {
 	/** A bare repository typically ends with this string */
 	public static final String DOT_GIT_EXT = ".git";
 
+	/** WANdisco Replication Settings section. */
+
+	/**
+	 * A replication setting which can override default behaviour of this jar,
+	 * to behave as a non replicated one.
+	 *
+	 * @since 5.1.12-RP
+	 */
+	public static final String REPLICATION_DISABLED = "gerritms_replication_disabled";
+
+	/**
+	 * Allow system to be overriden and use the old rp-git-update script for replication of git RefUpdate calls.
+	 * This allow us to change back to old behaviour if we need to diagnose any update issues.
+	 * @since 5.1.12-RP
+	 */
+	public static final String REPLICATION_USE_GIT_UPDATE_SCRIPT = "gitms_replication_use_remote_update_script";
+
+	/**
+	 * Allows RefUpdate dev logging to be enabled.. Note this logging isn't unique / per file etc, and is meant for
+	 * internal use only - NOT FOR PRODUCTION SYSTEMS!!!
+	 * @since 5.1.12-RP
+	 */
+	public static final String REPLICATION_REFUPDATE_LOGGING = "gitms_ref_update_logging";  // DEV USE ONLY
+
+	/**
+	 * Detailed reason about what happens when Gerrit supplies an operation to jgit which has been hidden from the user
+	 * by the gerrit cache, but already exists in Jgit repo.  So e.g. tag created then hidden by ACL rules, as they can
+	 * create tags, but not see them(this is without change to acl after the fact).  It then can recieve mixed batch
+	 * update operations with repo in old and new state for different commands at the same time.
+	 */
+	public static final String REPLICATION_MIXED_REPOSITORY_FAILURE_REASON = "Applying ref updates failed due to a mixed repository state, please obtain a fresh clone and try again.";
+
 	/**
 	 * Name of the attributes file
 	 *

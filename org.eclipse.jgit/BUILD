@@ -24,6 +24,8 @@ java_library(
     resources = RESOURCES,
     deps = [
         ":insecure_cipher_factory",
+        "//lib:commons-lang",
+        "//lib:gerrit-gitms-interface",
         "//lib:javaewah",
         "//lib:jsch",
         "//lib:jzlib",

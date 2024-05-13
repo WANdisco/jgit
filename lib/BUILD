@@ -25,10 +25,28 @@ java_library(
 )
 
 java_library(
+    name = "commons-lang",
+    visibility = [
+        "//org.eclipse.jgit:__pkg__",
+    ],
+    exports = ["@commons-lang//jar"],
+)
+
+java_library(
     name = "commons-logging",
     testonly = 1,
     visibility = ["//visibility:public"],
     exports = ["@commons-logging//jar"],
+)
+
+java_library(
+    name = "gerrit-gitms-interface",
+    # TODO: TREV This should be provided dependency... but org.eclipse.jgit.lfs.server depends on it.
+    visibility = [
+        "//org.eclipse.jgit:__pkg__",
+        "//org.eclipse.jgit.lfs.server:__pkg__",
+    ],
+    exports = ["@gerrit-gitms-interface//jar"],
 )
 
 java_library(

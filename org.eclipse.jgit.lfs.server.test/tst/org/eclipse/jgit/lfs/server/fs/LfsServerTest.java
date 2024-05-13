@@ -130,8 +130,12 @@ public abstract class LfsServerTest {
 
 		server = new AppServer();
 		ServletContextHandler app = server.addContext("/lfs");
+		// start server now so we can request uri below.
+		server.setUp();
+
 		dir = Paths.get(tmp.toString(), "lfs");
-		this.repository = new FileLfsRepository(null, dir);
+
+		this.repository = new FileLfsRepository(server.getURI() + "/lfs/objects/", dir );
 		servlet = new FileLfsServlet(repository, timeout);
 		app.addServlet(new ServletHolder(servlet), "/objects/*");
 
@@ -146,9 +150,6 @@ public abstract class LfsServerTest {
 			}
 		};
 		app.addServlet(new ServletHolder(protocol), "/objects/batch");
-
-		server.setUp();
-		this.repository.setUrl(server.getURI() + "/lfs/objects/");
 	}
 
 	@After

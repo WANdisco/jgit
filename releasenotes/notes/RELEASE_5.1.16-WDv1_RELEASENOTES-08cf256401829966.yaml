@@ -1,0 +1,3 @@
+---
+features:
+  - Ability to support replicated Tag creation for REFS which already exist but gerrit has forwarded the command

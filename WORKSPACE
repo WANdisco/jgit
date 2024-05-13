@@ -19,7 +19,12 @@ load_bazlets(commit = "f53f51fb660552d0581aa0ba52c3836ed63d56a3")
 
 load(
     "@com_googlesource_gerrit_bazlets//tools:maven_jar.bzl",
+    "MAVEN_LOCAL",
     "maven_jar",
+)
+load(
+    "//tools:maven_custom.bzl",
+    "WANDISCO_ASSETS",
 )
 
 JMH_VERS = "1.21"
@@ -64,6 +69,18 @@ maven_jar(
     sha1 = "a1551373315ffc2f96130a0e5704f74e151777ba",
 )
 
+# WANdisco maven assets
+# TODO: check how to make this provided scope in LFS server same as we do in POM.xml
+_GERRIT_GITMS_VERSION = "1.1.0.1-TC18-SNAPSHOT"
+
+maven_jar(
+    name = "gerrit-gitms-interface",
+    artifact = "com.wandisco:gerrit-gitms-interface:" + _GERRIT_GITMS_VERSION,
+    repository = WANDISCO_ASSETS,
+    #    repository = MAVEN_LOCAL,
+    #    sha1 = 213e4234
+)
+
 maven_jar(
     name = "javaewah",
     artifact = "com.googlecode.javaewah:JavaEWAH:1.1.6",
@@ -89,21 +106,41 @@ maven_jar(
 )
 
 maven_jar(
-    name = "commons-logging",
-    artifact = "commons-logging:commons-logging:1.2",
-    sha1 = "4bfc12adfe4842bf07b657f0369c4cb522955686",
+    name = "commons-lang",
+    artifact = "commons-lang:commons-lang:2.6",
+    sha1 = "0ce1edb914c94ebc388f086c6827e8bdeec71ac2",
+)
+
+maven_jar(
+    name = "jcl-over-slf4j",
+    artifact = "org.slf4j:jcl-over-slf4j:1.7.5",
+    sha1 = "0cd5970bd13fa85f7bed41ca606d6daf7cbf1365",
+)
+
+LOG4J_VERSION = "2.17.1"
+
+maven_jar(
+    name = "log4j-core",
+    artifact = "org.apache.logging.log4j:log4j-core:" + LOG4J_VERSION,
+    sha1 = "e257b0562453f73eabac1bc3181ba33e79d193ed",
+)
+
+maven_jar(
+    name = "log4j-api",
+    artifact = "org.apache.logging.log4j:log4j-api:" + LOG4J_VERSION,
+    sha1 = "23cdb2c6babad9b2b0dcf47c6a2c29d504e4c7a8",
+)
+
+maven_jar(
+    name = "slf4j-log4j12",
+    artifact = "org.slf4j:slf4j-log4j12:1.7.5",
+    sha1 = "6edffc576ce104ec769d954618764f39f0f0f10d",
 )
 
 maven_jar(
     name = "log-api",
-    artifact = "org.slf4j:slf4j-api:1.7.2",
-    sha1 = "0081d61b7f33ebeab314e07de0cc596f8e858d97",
-)
-
-maven_jar(
-    name = "slf4j-simple",
-    artifact = "org.slf4j:slf4j-simple:1.7.2",
-    sha1 = "760055906d7353ba4f7ce1b8908bc6b2e91f39fa",
+    artifact = "org.slf4j:slf4j-api:1.7.5",
+    sha1 = "6b262da268f8ad9eff941b25503a9198f0a0ac93",
 )
 
 maven_jar(
