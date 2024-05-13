@@ -1,0 +1,3 @@
+
+Lists of 1 third-party dependencies.
+     (Eclipse Distribution License (New BSD License)) JGit - Core (org.eclipse.jgit:org.eclipse.jgit:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit)

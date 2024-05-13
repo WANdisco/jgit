@@ -1,0 +1,4 @@
+
+Lists of 2 third-party dependencies.
+     (Eclipse Public License 1.0) JUnit (junit:junit:4.12 - http://junit.org)
+     (Eclipse Distribution License (New BSD License)) JGit - Core (org.eclipse.jgit:org.eclipse.jgit:4.5.2.201704071617-r_WDv4 - http://www.eclipse.org/jgit//org.eclipse.jgit)
