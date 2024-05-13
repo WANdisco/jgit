@@ -40,6 +40,18 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.internal.storage.file;
 
@@ -127,8 +139,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 
 	private final File alternatesFile;
 
-	private final AtomicReference<PackList> packList;
-
 	private final FS fs;
 
 	private final AtomicReference<AlternateHandle[]> alternates;
@@ -140,6 +150,8 @@ public class ObjectDirectory extends FileObjectDatabase {
 	private FileSnapshot shallowFileSnapshot = FileSnapshot.DIRTY;
 
 	private Set<ObjectId> shallowCommitsIds;
+
+	final AtomicReference<PackList> packList;
 
 	/**
 	 * Initialize a reference to an on-disk object directory.
@@ -581,13 +593,8 @@ public class ObjectDirectory extends FileObjectDatabase {
 			transientErrorCount = p.incrementTransientErrorCount();
 		}
 		if (warnTmpl != null) {
-			if (LOG.isDebugEnabled()) {
-				LOG.debug(MessageFormat.format(warnTmpl,
-						p.getPackFile().getAbsolutePath()), e);
-			} else {
-				LOG.warn(MessageFormat.format(warnTmpl,
-						p.getPackFile().getAbsolutePath()));
-			}
+			LOG.warn(MessageFormat.format(warnTmpl,
+					p.getPackFile().getAbsolutePath()), e);
 		} else {
 			if (doLogExponentialBackoff(transientErrorCount)) {
 				// Don't remove the pack from the list, as the error may be
@@ -674,19 +681,28 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return InsertLooseObjectResult.FAILURE;
 	}
 
-	private boolean searchPacksAgain(PackList old) {
-		// Whether to trust the pack folder's modification time. If set
-		// to false we will always scan the .git/objects/pack folder to
-		// check for new pack files. If set to true (default) we use the
-		// lastmodified attribute of the folder and assume that no new
-		// pack files can be in this folder if his modification time has
-		// not changed.
+	boolean searchPacksAgain(PackList old) {
+		/**
+                 * It looks like the JGit project ran into a similar issue as we
+                 * did here. The lastmodified time of the packfile does not appear
+                 * to be entirely reliable. Commenting this out here for reference
+                 * instead of replacing our version, as we would always just set
+                 * this property to false anyway.
+                 * 
+                 * Whether to trust the pack folder's modification time. If set
+		 * to false we will always scan the .git/objects/pack folder to
+		 * check for new pack files. If set to true (default) we use the
+		 * lastmodified attribute of the folder and assume that no new
+		 * pack files can be in this folder if his modification time has
+		 * not changed.
 		boolean trustFolderStat = config.getBoolean(
 				ConfigConstants.CONFIG_CORE_SECTION,
 				ConfigConstants.CONFIG_KEY_TRUSTFOLDERSTAT, true);
 
 		return ((!trustFolderStat) || old.snapshot.isModified(packDirectory))
-				&& old != scanPacks(old);
+				&& old != scanPacks(old); 
+                */
+            return old != scanPacks(old);
 	}
 
 	Config getConfig() {
@@ -820,13 +836,14 @@ public class ObjectDirectory extends FileObjectDatabase {
 			}
 
 			final String packName = base + PACK.getExtension();
+			final File packFile = new File(packDirectory, packName);
 			final PackFile oldPack = forReuse.remove(packName);
-			if (oldPack != null) {
+			if (oldPack != null
+					&& !oldPack.getFileSnapshot().isModified(packFile)) {
 				list.add(oldPack);
 				continue;
 			}
 
-			final File packFile = new File(packDirectory, packName);
 			list.add(new PackFile(packFile, extensions));
 			foundNew = true;
 		}
@@ -960,7 +977,7 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return new File(new File(getDirectory(), d), f);
 	}
 
-	private static final class PackList {
+	static final class PackList {
 		/** State just before reading the pack directory. */
 		final FileSnapshot snapshot;
 
