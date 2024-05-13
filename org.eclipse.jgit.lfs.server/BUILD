@@ -15,5 +15,6 @@ java_library(
         "//org.eclipse.jgit.http.apache:http-apache",
         "//org.eclipse.jgit:jgit",
         "//org.eclipse.jgit.lfs:jgit-lfs",
+        "//lib:gerrit-gitms-interface"
     ],
 )

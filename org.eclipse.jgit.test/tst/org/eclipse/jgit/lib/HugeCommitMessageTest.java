@@ -68,6 +68,7 @@ public class HugeCommitMessageTest extends RepositoryTestCase {
 			git.add().addFilepattern("foo").call();
 			WindowCacheConfig wc = new WindowCacheConfig();
 			wc.setStreamFileThreshold(HUGE_SIZE + WindowCacheConfig.MB);
+			wc.setPackedGitOpenFilesCacheCleanEnabled(false);
 			wc.install();
 			RevCommit commit = git.commit()
 					.setMessage(insanelyHugeCommitMessage()).call();

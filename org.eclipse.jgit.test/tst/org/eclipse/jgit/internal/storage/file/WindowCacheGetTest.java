@@ -47,17 +47,23 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import org.eclipse.jgit.errors.CorruptObjectException;
+import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.junit.JGitTestUtil;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
@@ -77,6 +83,7 @@ public class WindowCacheGetTest extends SampleDataRepositoryTestCase {
 	private List<TestObject> toLoad;
 	private WindowCacheConfig cfg;
 	private boolean useStrongRefs;
+	private File packDir;
 
 	@Parameters(name = "useStrongRefs={0}")
 	public static Collection<Object[]> data() {
@@ -113,6 +120,8 @@ public class WindowCacheGetTest extends SampleDataRepositoryTestCase {
 		assertEquals(96, toLoad.size());
 		cfg = new WindowCacheConfig();
 		cfg.setPackedGitUseStrongRefs(useStrongRefs);
+
+		packDir = db.getObjectDatabase().getPackDirectory();;
 	}
 
 	@Test
@@ -156,6 +165,26 @@ public class WindowCacheGetTest extends SampleDataRepositoryTestCase {
 		checkLimits(cfg);
 	}
 
+	@Test
+	public void testCache_CleanerTaskEnabled() throws IOException {
+		cfg.install();
+		doCacheTests();
+		removeUnderlyingPackFiles();
+
+		final WindowCache cache = WindowCache.getInstance();
+		WindowCacheStats s = cache.getStats();
+		s.resetCounters();
+
+		new WindowCache.WindowCacheCleaner(cfg).run();
+
+		doCacheTestsAfterCacheClean();
+
+		assertEquals(6, s.getEvictionCount());
+		assertEquals(0, s.getHitCount());
+		assertEquals(0, s.getLoadCount());
+		assertEquals(0, s.getLoadFailureCount());
+	}
+
 	private static void checkLimits(WindowCacheConfig cfg) {
 		final WindowCache cache = WindowCache.getInstance();
 		WindowCacheStats s = cache.getStats();
@@ -192,6 +221,32 @@ public class WindowCacheGetTest extends SampleDataRepositoryTestCase {
 			assertNotNull(or);
 			assertEquals(o.type, or.getType());
 		}
+	}
+
+	private void doCacheTestsAfterCacheClean() throws IOException {
+		for (TestObject o : toLoad) {
+			try {
+				db.open(o.id, o.type);
+				fail("Exception should have been thrown, underlying files have been removed");
+			} catch (MissingObjectException e) {
+				assertEquals(e.getObjectId(), o.id);
+			}
+		}
+	}
+
+	private void removeUnderlyingPackFiles() {
+		Stream.of(Objects.requireNonNull(packDir.list()))
+		      .filter(filename -> filename.endsWith(".pack"))
+		      .forEach(filename ->  {
+		      	File toDelete = new File(packDir, filename);
+			      try {
+				      FileOutputStream fos = new FileOutputStream(toDelete);
+				      if (!toDelete.delete()) {
+				        fail("Failed to delete underlying packfile");
+				      }
+				      fos.getFD().sync();
+			      } catch (IOException e) {}
+		      });
 	}
 
 	private static class TestObject {

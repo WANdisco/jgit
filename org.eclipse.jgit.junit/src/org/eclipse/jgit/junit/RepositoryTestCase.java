@@ -378,14 +378,19 @@ public abstract class RepositoryTestCase extends LocalDiskRepositoryTestCase {
 			tmp = File.createTempFile("fsTickTmpFile", null,
 					lastFile.getParentFile());
 		}
+		long minimumRacyInterval = FS.getFileStoreAttributes(tmp.toPath())
+									 .getMinimalRacyInterval().toNanos();
 		long res = FS.getFileStoreAttributes(tmp.toPath())
 				.getFsTimestampResolution().toNanos();
-		long sleepTime = res / 10;
 		try {
-			Instant startTime = fs.lastModifiedInstant(lastFile);
+			// We're going to sleep for increments of our filesystem resolution, but we also need to account
+			// for the minimum racy interval of the underlying FS so add another (tick + minimum race interval) onto
+			// start time so that we definitely tick past the moment at which new file creation will receive a new
+			// timestamp.
+			Instant startTime = fs.lastModifiedInstant(lastFile).plusNanos(res + minimumRacyInterval);
 			Instant actTime = fs.lastModifiedInstant(tmp);
 			while (actTime.compareTo(startTime) <= 0) {
-				TimeUnit.NANOSECONDS.sleep(sleepTime);
+				TimeUnit.NANOSECONDS.sleep(res);
 				FileUtils.touch(tmp.toPath());
 				actTime = fs.lastModifiedInstant(tmp);
 			}

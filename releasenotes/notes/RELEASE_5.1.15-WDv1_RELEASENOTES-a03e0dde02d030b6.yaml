@@ -1,0 +1,3 @@
+---
+features:
+  - WindowCache prevent holding large packfile objects after GC
