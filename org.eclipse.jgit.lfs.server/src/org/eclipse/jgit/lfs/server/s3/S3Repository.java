@@ -41,6 +41,19 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
+
 package org.eclipse.jgit.lfs.server.s3;
 
 import static javax.servlet.http.HttpServletResponse.SC_OK;
@@ -64,6 +77,7 @@ import java.util.Map;
 
 import org.eclipse.jgit.lfs.lib.AnyLongObjectId;
 import org.eclipse.jgit.lfs.server.LargeFileRepository;
+import org.eclipse.jgit.lfs.server.ReplicationInfo;
 import org.eclipse.jgit.lfs.server.Response;
 import org.eclipse.jgit.lfs.server.Response.Action;
 import org.eclipse.jgit.lfs.server.internal.LfsServerText;
@@ -78,140 +92,170 @@ import org.eclipse.jgit.util.HttpSupport;
  */
 public class S3Repository implements LargeFileRepository {
 
-	private S3Config s3Config;
+    private S3Config s3Config;
 
-	/**
-	 * Construct a LFS repository storing large objects in Amazon S3
-	 *
-	 * @param config
-	 *            AWS S3 storage bucket configuration
-	 */
-	public S3Repository(S3Config config) {
-		validateConfig(config);
-		this.s3Config = config;
-	}
+    /**
+     * Construct a LFS repository storing large objects in Amazon S3
+     *
+     * @param config AWS S3 storage bucket configuration
+     */
+    public S3Repository(S3Config config) {
+        validateConfig(config);
+        this.s3Config = config;
+    }
 
-	@Override
-	public Response.Action getDownloadAction(AnyLongObjectId oid) {
-		URL endpointUrl = getObjectUrl(oid);
-		Map<String, String> queryParams = new HashMap<String, String>();
-		queryParams.put(X_AMZ_EXPIRES,
-				Integer.toString(s3Config.getExpirationSeconds()));
-		Map<String, String> headers = new HashMap<String, String>();
-		String authorizationQueryParameters = SignerV4.createAuthorizationQuery(
-				s3Config, endpointUrl, METHOD_GET, headers, queryParams,
-				UNSIGNED_PAYLOAD);
+    @Override
+    public Response.Action getDownloadAction(AnyLongObjectId oid) {
+        URL endpointUrl = getObjectUrl(oid);
+        Map<String, String> queryParams = new HashMap<String, String>();
+        queryParams.put(X_AMZ_EXPIRES,
+                Integer.toString(s3Config.getExpirationSeconds()));
+        Map<String, String> headers = new HashMap<String, String>();
+        String authorizationQueryParameters = SignerV4.createAuthorizationQuery(
+                s3Config, endpointUrl, METHOD_GET, headers, queryParams,
+                UNSIGNED_PAYLOAD);
 
-		Response.Action a = new Response.Action();
-		a.href = endpointUrl.toString() + "?" + authorizationQueryParameters; //$NON-NLS-1$
-		return a;
-	}
+        Response.Action a = new Response.Action();
+        a.href = endpointUrl.toString() + "?" + authorizationQueryParameters; //$NON-NLS-1$
+        return a;
+    }
 
-	@Override
-	public Response.Action getUploadAction(AnyLongObjectId oid, long size) {
-		cacheObjectMetaData(oid, size);
-		URL objectUrl = getObjectUrl(oid);
-		Map<String, String> headers = new HashMap<String, String>();
-		headers.put(X_AMZ_CONTENT_SHA256, oid.getName());
-		headers.put(HDR_CONTENT_LENGTH, Long.toString(size));
-		headers.put(X_AMZ_STORAGE_CLASS, s3Config.getStorageClass());
-		headers.put(HttpSupport.HDR_CONTENT_TYPE, "application/octet-stream"); //$NON-NLS-1$
-		headers = SignerV4.createHeaderAuthorization(s3Config, objectUrl,
-				METHOD_PUT, headers, oid.getName());
+    @Override
+    public Response.Action getUploadAction(AnyLongObjectId oid, long size) {
+        cacheObjectMetaData(oid, size);
+        URL objectUrl = getObjectUrl(oid);
+        Map<String, String> headers = new HashMap<String, String>();
+        headers.put(X_AMZ_CONTENT_SHA256, oid.getName());
+        headers.put(HDR_CONTENT_LENGTH, Long.toString(size));
+        headers.put(X_AMZ_STORAGE_CLASS, s3Config.getStorageClass());
+        headers.put(HttpSupport.HDR_CONTENT_TYPE, "application/octet-stream"); //$NON-NLS-1$
+        headers = SignerV4.createHeaderAuthorization(s3Config, objectUrl,
+                METHOD_PUT, headers, oid.getName());
 
-		Response.Action a = new Response.Action();
-		a.href = objectUrl.toString();
-		a.header = new HashMap<>();
-		a.header.putAll(headers);
-		return a;
-	}
+        Response.Action a = new Response.Action();
+        a.href = objectUrl.toString();
+        a.header = new HashMap<>();
+        a.header.putAll(headers);
+        return a;
+    }
 
-	@Override
-	public Action getVerifyAction(AnyLongObjectId id) {
-		return null; // TODO(ms) implement this
-	}
+    @Override
+    public Action getVerifyAction(AnyLongObjectId id) {
+        return null; // TODO(ms) implement this
+    }
 
-	@Override
-	public long getSize(AnyLongObjectId oid) throws IOException {
-		URL endpointUrl = getObjectUrl(oid);
-		Map<String, String> queryParams = new HashMap<String, String>();
-		queryParams.put(X_AMZ_EXPIRES,
-				Integer.toString(s3Config.getExpirationSeconds()));
-		Map<String, String> headers = new HashMap<String, String>();
+    @Override
+    public long getSize(AnyLongObjectId oid) throws IOException {
+        URL endpointUrl = getObjectUrl(oid);
+        Map<String, String> queryParams = new HashMap<String, String>();
+        queryParams.put(X_AMZ_EXPIRES,
+                Integer.toString(s3Config.getExpirationSeconds()));
+        Map<String, String> headers = new HashMap<String, String>();
 
-		String authorizationQueryParameters = SignerV4.createAuthorizationQuery(
-				s3Config, endpointUrl, METHOD_HEAD, headers, queryParams,
-				UNSIGNED_PAYLOAD);
-		String href = endpointUrl.toString() + "?" //$NON-NLS-1$
-				+ authorizationQueryParameters;
+        String authorizationQueryParameters = SignerV4.createAuthorizationQuery(
+                s3Config, endpointUrl, METHOD_HEAD, headers, queryParams,
+                UNSIGNED_PAYLOAD);
+        String href = endpointUrl.toString() + "?" //$NON-NLS-1$
+                + authorizationQueryParameters;
 
-		Proxy proxy = HttpSupport.proxyFor(ProxySelector.getDefault(),
-				endpointUrl);
-		HttpClientConnectionFactory f = new HttpClientConnectionFactory();
-		HttpConnection conn = f.create(new URL(href), proxy);
-		if (s3Config.isDisableSslVerify()) {
-			HttpSupport.disableSslVerify(conn);
-		}
-		conn.setRequestMethod(METHOD_HEAD);
-		conn.connect();
-		int status = conn.getResponseCode();
-		if (status == SC_OK) {
-			String contentLengthHeader = conn
-					.getHeaderField(HDR_CONTENT_LENGTH);
-			if (contentLengthHeader != null) {
-				return Integer.parseInt(contentLengthHeader);
-			}
-		}
-		return -1;
-	}
+        Proxy proxy = HttpSupport.proxyFor(ProxySelector.getDefault(),
+                endpointUrl);
+        HttpClientConnectionFactory f = new HttpClientConnectionFactory();
+        HttpConnection conn = f.create(new URL(href), proxy);
+        if (s3Config.isDisableSslVerify()) {
+            HttpSupport.disableSslVerify(conn);
+        }
+        conn.setRequestMethod(METHOD_HEAD);
+        conn.connect();
+        int status = conn.getResponseCode();
+        if (status == SC_OK) {
+            String contentLengthHeader = conn
+                    .getHeaderField(HDR_CONTENT_LENGTH);
+            if (contentLengthHeader != null) {
+                return Integer.parseInt(contentLengthHeader);
+            }
+        }
+        return -1;
+    }
 
-	/**
-	 * Cache metadata (size) for an object to avoid extra roundtrip to S3 in
-	 * order to retrieve this metadata for a given object. Subclasses can
-	 * implement a local cache and override {{@link #getSize(AnyLongObjectId)}
-	 * to retrieve the object size from the local cache to eliminate the need
-	 * for another roundtrip to S3
-	 *
-	 * @param oid
-	 *            the object id identifying the object to be cached
-	 * @param size
-	 *            the object's size (in bytes)
-	 */
-	protected void cacheObjectMetaData(AnyLongObjectId oid, long size) {
-		// no caching
-	}
+    @Override
+    public String getProjectName() {
+        return null;
+    }
 
-	private void validateConfig(S3Config config) {
-		assertNotEmpty(LfsServerText.get().undefinedS3AccessKey,
-				config.getAccessKey());
-		assertNotEmpty(LfsServerText.get().undefinedS3Bucket,
-				config.getBucket());
-		assertNotEmpty(LfsServerText.get().undefinedS3Region,
-				config.getRegion());
-		assertNotEmpty(LfsServerText.get().undefinedS3SecretKey,
-				config.getSecretKey());
-		assertNotEmpty(LfsServerText.get().undefinedS3StorageClass,
-				config.getStorageClass());
-	}
+    @Override
+    public String getProjectIdentity() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
 
-	private void assertNotEmpty(String message, String value) {
-		if (value == null || value.trim().length() == 0) {
-			throw new IllegalArgumentException(message);
-		}
-	}
+    
+    /**
+     * Cache metadata (size) for an object to avoid extra roundtrip to S3 in
+     * order to retrieve this metadata for a given object. Subclasses can
+     * implement a local cache and override {{@link #getSize(AnyLongObjectId)}
+     * to retrieve the object size from the local cache to eliminate the need
+     * for another roundtrip to S3
+     *
+     * @param oid the object id identifying the object to be cached
+     * @param size the object's size (in bytes)
+     */
+    protected void cacheObjectMetaData(AnyLongObjectId oid, long size) {
+        // no caching
+    }
 
-	private URL getObjectUrl(AnyLongObjectId oid) {
-		try {
-			return new URL(String.format("https://s3-%s.amazonaws.com/%s/%s", //$NON-NLS-1$
-					s3Config.getRegion(), s3Config.getBucket(),
-					getPath(oid)));
-		} catch (MalformedURLException e) {
-			throw new IllegalArgumentException(MessageFormat.format(
-					LfsServerText.get().unparsableEndpoint, e.getMessage()));
-		}
-	}
+    private void validateConfig(S3Config config) {
+        assertNotEmpty(LfsServerText.get().undefinedS3AccessKey,
+                config.getAccessKey());
+        assertNotEmpty(LfsServerText.get().undefinedS3Bucket,
+                config.getBucket());
+        assertNotEmpty(LfsServerText.get().undefinedS3Region,
+                config.getRegion());
+        assertNotEmpty(LfsServerText.get().undefinedS3SecretKey,
+                config.getSecretKey());
+        assertNotEmpty(LfsServerText.get().undefinedS3StorageClass,
+                config.getStorageClass());
+    }
 
-	private String getPath(AnyLongObjectId oid) {
-		return oid.getName();
-	}
+    private void assertNotEmpty(String message, String value) {
+        if (value == null || value.trim().length() == 0) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private URL getObjectUrl(AnyLongObjectId oid) {
+        try {
+            return new URL(String.format("https://s3-%s.amazonaws.com/%s/%s", //$NON-NLS-1$
+                    s3Config.getRegion(), s3Config.getBucket(),
+                    getPath(oid)));
+        } catch (MalformedURLException e) {
+            throw new IllegalArgumentException(MessageFormat.format(
+                    LfsServerText.get().unparsableEndpoint, e.getMessage()));
+        }
+    }
+
+    private String getPath(AnyLongObjectId oid) {
+        return oid.getName();
+    }
+
+    @Override
+    public boolean isReplica() {
+        // indication of false to isReplica protects the use of the other replication
+        // methods.
+        return false;
+    }
+
+    @Override
+    public String getReplicaGroupIdentifier() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public boolean isReplicated(AnyLongObjectId id) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    @Override
+    public void setReplicationInfo(ReplicationInfo replicationInfo) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
 }
