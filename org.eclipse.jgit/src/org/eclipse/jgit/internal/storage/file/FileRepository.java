@@ -46,17 +46,6 @@
 
 package org.eclipse.jgit.internal.storage.file;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.text.MessageFormat;
-import java.text.ParseException;
-import java.util.HashSet;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.Set;
-
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.api.errors.JGitInternalException;
 import org.eclipse.jgit.attributes.AttributesNode;
@@ -69,35 +58,31 @@ import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory.AlternateHandle;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory.AlternateRepository;
 import org.eclipse.jgit.internal.storage.reftree.RefTreeDatabase;
-import org.eclipse.jgit.lib.BaseRepositoryBuilder;
-import org.eclipse.jgit.lib.ConfigConstants;
-import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.*;
 import org.eclipse.jgit.lib.CoreConfig.HideDotFiles;
 import org.eclipse.jgit.lib.CoreConfig.SymLinks;
-import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.ProgressMonitor;
-import org.eclipse.jgit.lib.Ref;
-import org.eclipse.jgit.lib.RefDatabase;
-import org.eclipse.jgit.lib.RefUpdate;
-import org.eclipse.jgit.lib.ReflogReader;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.storage.pack.PackConfig;
-import org.eclipse.jgit.util.FileUtils;
-import org.eclipse.jgit.util.IO;
-import org.eclipse.jgit.util.RawParseUtils;
-import org.eclipse.jgit.util.StringUtils;
-import org.eclipse.jgit.util.SystemReader;
+import org.eclipse.jgit.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.text.MessageFormat;
+import java.text.ParseException;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+
+import static org.eclipse.jgit.lib.ReplicatedUpdate.replicatedCreate;
 
 /**
  * Represents a Git repository. A repository holds all objects and refs used for
  * managing source code (could by any type of file, but source code is what
  * SCM's are typically used for).
- *
+ * <p>
  * In Git terms all data is stored in GIT_DIR, typically a directory called
  * .git. A work tree is maintained unless the repository is a bare repository.
  * Typically the .git directory is located at the root of the work dir.
@@ -118,496 +103,532 @@ import org.slf4j.LoggerFactory;
  * This implementation only handles a subtly undocumented subset of git features.
  */
 public class FileRepository extends Repository {
-	private static final Logger LOG = LoggerFactory
-			.getLogger(FileRepository.class);
-	private static final String UNNAMED = "Unnamed repository; edit this file to name it for gitweb."; //$NON-NLS-1$
+    private static final Logger LOG = LoggerFactory
+            .getLogger(FileRepository.class);
+    private static final String UNNAMED = "Unnamed repository; edit this file to name it for gitweb."; //$NON-NLS-1$
 
-	private final FileBasedConfig repoConfig;
-	private final RefDatabase refs;
-	private final ObjectDirectory objectDatabase;
+    private final FileBasedConfig repoConfig;
+    private final RefDatabase refs;
+    private final ObjectDirectory objectDatabase;
 
-	private final Object snapshotLock = new Object();
+    private final Object snapshotLock = new Object();
 
-	// protected by snapshotLock
-	private FileSnapshot snapshot;
+    // protected by snapshotLock
+    private FileSnapshot snapshot;
 
-	/**
-	 * Construct a representation of a Git repository.
-	 * <p>
-	 * The work tree, object directory, alternate object directories and index
-	 * file locations are deduced from the given git directory and the default
-	 * rules by running
-	 * {@link org.eclipse.jgit.storage.file.FileRepositoryBuilder}. This
-	 * constructor is the same as saying:
-	 *
-	 * <pre>
-	 * new FileRepositoryBuilder().setGitDir(gitDir).build()
-	 * </pre>
-	 *
-	 * @param gitDir
-	 *            GIT_DIR (the location of the repository metadata).
-	 * @throws java.io.IOException
-	 *             the repository appears to already exist but cannot be
-	 *             accessed.
-	 * @see FileRepositoryBuilder
-	 */
-	public FileRepository(File gitDir) throws IOException {
-		this(new FileRepositoryBuilder().setGitDir(gitDir).setup());
-	}
+    /**
+     * Construct a representation of a Git repository.
+     * <p>
+     * The work tree, object directory, alternate object directories and index
+     * file locations are deduced from the given git directory and the default
+     * rules by running
+     * {@link org.eclipse.jgit.storage.file.FileRepositoryBuilder}. This
+     * constructor is the same as saying:
+     *
+     * <pre>
+     * new FileRepositoryBuilder().setGitDir(gitDir).build()
+     * </pre>
+     *
+     * @param gitDir GIT_DIR (the location of the repository metadata).
+     * @throws java.io.IOException the repository appears to already exist but cannot be
+     *                             accessed.
+     * @see FileRepositoryBuilder
+     */
+    public FileRepository(File gitDir) throws IOException {
+        this(new FileRepositoryBuilder().setGitDir(gitDir).setup());
+    }
 
-	/**
-	 * A convenience API for {@link #FileRepository(File)}.
-	 *
-	 * @param gitDir
-	 *            GIT_DIR (the location of the repository metadata).
-	 * @throws java.io.IOException
-	 *             the repository appears to already exist but cannot be
-	 *             accessed.
-	 * @see FileRepositoryBuilder
-	 */
-	public FileRepository(String gitDir) throws IOException {
-		this(new File(gitDir));
-	}
+    /**
+     * A convenience API for {@link #FileRepository(File)}.
+     *
+     * @param gitDir GIT_DIR (the location of the repository metadata).
+     * @throws java.io.IOException the repository appears to already exist but cannot be
+     *                             accessed.
+     * @see FileRepositoryBuilder
+     */
+    public FileRepository(String gitDir) throws IOException {
+        this(new File(gitDir));
+    }
 
-	/**
-	 * Create a repository using the local file system.
-	 *
-	 * @param options
-	 *            description of the repository's important paths.
-	 * @throws java.io.IOException
-	 *             the user configuration file or repository configuration file
-	 *             cannot be accessed.
-	 */
-	public FileRepository(BaseRepositoryBuilder options) throws IOException {
-		super(options);
-		StoredConfig userConfig = null;
-		try {
-			userConfig = SystemReader.getInstance().getUserConfig();
-		} catch (ConfigInvalidException e) {
-			LOG.error(e.getMessage(), e);
-			throw new IOException(e.getMessage(), e);
-		}
-		repoConfig = new FileBasedConfig(userConfig, getFS().resolve(
-				getDirectory(), Constants.CONFIG),
-				getFS());
-		loadRepoConfig();
+    /**
+     * Create a repository using the local file system.
+     *
+     * @param options description of the repository's important paths.
+     * @throws java.io.IOException the user configuration file or repository configuration file
+     *                             cannot be accessed.
+     */
+    public FileRepository(BaseRepositoryBuilder options) throws IOException {
+        super(options);
+        StoredConfig userConfig = null;
+        try {
+            userConfig = SystemReader.getInstance().getUserConfig();
+        } catch (ConfigInvalidException e) {
+            LOG.error(e.getMessage(), e);
+            throw new IOException(e.getMessage(), e);
+        }
+        repoConfig = new FileBasedConfig(userConfig, getFS().resolve(
+                getDirectory(), Constants.CONFIG),
+                getFS());
+        loadRepoConfig();
 
-		repoConfig.addChangeListener(new ConfigChangedListener() {
-			@Override
-			public void onConfigChanged(ConfigChangedEvent event) {
-				fireEvent(event);
-			}
-		});
+        repoConfig.addChangeListener(new ConfigChangedListener() {
+            @Override
+            public void onConfigChanged(ConfigChangedEvent event) {
+                fireEvent(event);
+            }
+        });
 
-		final long repositoryFormatVersion = getConfig().getLong(
-				ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
+        final long repositoryFormatVersion = getConfig().getLong(
+                ConfigConstants.CONFIG_CORE_SECTION, null,
+                ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
 
-		String reftype = repoConfig.getString(
-				"extensions", null, "refStorage"); //$NON-NLS-1$ //$NON-NLS-2$
-		if (repositoryFormatVersion >= 1 && reftype != null) {
-			if (StringUtils.equalsIgnoreCase(reftype, "reftree")) { //$NON-NLS-1$
-				refs = new RefTreeDatabase(this, new RefDirectory(this));
-			} else {
-				throw new IOException(JGitText.get().unknownRepositoryFormat);
-			}
-		} else {
-			refs = new RefDirectory(this);
-		}
+        String reftype = repoConfig.getString(
+                "extensions", null, "refStorage"); //$NON-NLS-1$ //$NON-NLS-2$
+        if (repositoryFormatVersion >= 1 && reftype != null) {
+            if (StringUtils.equalsIgnoreCase(reftype, "reftree")) { //$NON-NLS-1$
+                refs = new RefTreeDatabase(this, new RefDirectory(this));
+            } else {
+                throw new IOException(JGitText.get().unknownRepositoryFormat);
+            }
+        } else {
+            refs = new RefDirectory(this);
+        }
 
-		objectDatabase = new ObjectDirectory(repoConfig, //
-				options.getObjectDirectory(), //
-				options.getAlternateObjectDirectories(), //
-				getFS(), //
-				new File(getDirectory(), Constants.SHALLOW));
+        objectDatabase = new ObjectDirectory(repoConfig, //
+                options.getObjectDirectory(), //
+                options.getAlternateObjectDirectories(), //
+                getFS(), //
+                new File(getDirectory(), Constants.SHALLOW));
 
-		if (objectDatabase.exists()) {
-			if (repositoryFormatVersion > 1)
-				throw new IOException(MessageFormat.format(
-						JGitText.get().unknownRepositoryFormat2,
-						Long.valueOf(repositoryFormatVersion)));
-		}
+        if (objectDatabase.exists()) {
+            if (repositoryFormatVersion > 1)
+                throw new IOException(MessageFormat.format(
+                        JGitText.get().unknownRepositoryFormat2,
+                        Long.valueOf(repositoryFormatVersion)));
+        }
 
-		if (!isBare()) {
-			snapshot = FileSnapshot.save(getIndexFile());
-		}
-	}
+        if (!isBare()) {
+            snapshot = FileSnapshot.save(getIndexFile());
+        }
+    }
 
-	private void loadRepoConfig() throws IOException {
-		try {
-			repoConfig.load();
-		} catch (ConfigInvalidException e) {
-			throw new IOException(JGitText.get().unknownRepositoryFormat, e);
-		}
-	}
+    private void loadRepoConfig() throws IOException {
+        try {
+            repoConfig.load();
+        } catch (ConfigInvalidException e) {
+            throw new IOException(JGitText.get().unknownRepositoryFormat, e);
+        }
+    }
 
-	/**
-	 * {@inheritDoc}
-	 * <p>
-	 * Create a new Git repository initializing the necessary files and
-	 * directories.
-	 */
-	@Override
-	public void create(boolean bare) throws IOException {
-		final FileBasedConfig cfg = getConfig();
-		if (cfg.getFile().exists()) {
-			throw new IllegalStateException(MessageFormat.format(
-					JGitText.get().repositoryAlreadyExists, getDirectory()));
-		}
-		FileUtils.mkdirs(getDirectory(), true);
-		HideDotFiles hideDotFiles = getConfig().getEnum(
-				ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_HIDEDOTFILES,
-				HideDotFiles.DOTGITONLY);
-		if (hideDotFiles != HideDotFiles.FALSE && !isBare()
-				&& getDirectory().getName().startsWith(".")) //$NON-NLS-1$
-			getFS().setHidden(getDirectory(), true);
-		refs.create();
-		objectDatabase.create();
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Create a new Git repository initializing the necessary files and
+     * directories. ( Locally only after calling replicated endpoint, or for unreplicated repository/system ).
+     */
+    @Override
+    public void unreplicatedCreate(boolean bare) throws IOException {
+        final FileBasedConfig cfg = getConfig();
+        if (cfg.getFile().exists()) {
+            throw new IllegalStateException(MessageFormat.format(
+                    JGitText.get().repositoryAlreadyExists, getDirectory()));
+        }
+        FileUtils.mkdirs(getDirectory(), true);
+        HideDotFiles hideDotFiles = getConfig().getEnum(
+                ConfigConstants.CONFIG_CORE_SECTION, null,
+                ConfigConstants.CONFIG_KEY_HIDEDOTFILES,
+                HideDotFiles.DOTGITONLY);
+        if (hideDotFiles != HideDotFiles.FALSE && !isBare()
+                && getDirectory().getName().startsWith(".")) { //$NON-NLS-1$
+            getFS().setHidden(getDirectory(), true);
+        }
+        refs.create();
+        objectDatabase.create();
 
-		FileUtils.mkdir(new File(getDirectory(), "branches")); //$NON-NLS-1$
-		FileUtils.mkdir(new File(getDirectory(), "hooks")); //$NON-NLS-1$
+        FileUtils.mkdir(new File(getDirectory(), "branches")); //$NON-NLS-1$
+        FileUtils.mkdir(new File(getDirectory(), "hooks")); //$NON-NLS-1$
 
-		RefUpdate head = updateRef(Constants.HEAD);
-		head.disableRefLog();
-		head.link(Constants.R_HEADS + Constants.MASTER);
+        RefUpdate head = updateRef(Constants.HEAD);
+        head.disableRefLog();
+        head.link(Constants.R_HEADS + Constants.MASTER);
 
-		final boolean fileMode;
-		if (getFS().supportsExecute()) {
-			File tmp = File.createTempFile("try", "execute", getDirectory()); //$NON-NLS-1$ //$NON-NLS-2$
+        final boolean fileMode;
+        if (getFS().supportsExecute()) {
+            File tmp = File.createTempFile("try", "execute", getDirectory()); //$NON-NLS-1$ //$NON-NLS-2$
 
-			getFS().setExecute(tmp, true);
-			final boolean on = getFS().canExecute(tmp);
+            getFS().setExecute(tmp, true);
+            final boolean on = getFS().canExecute(tmp);
 
-			getFS().setExecute(tmp, false);
-			final boolean off = getFS().canExecute(tmp);
-			FileUtils.delete(tmp);
+            getFS().setExecute(tmp, false);
+            final boolean off = getFS().canExecute(tmp);
+            FileUtils.delete(tmp);
 
-			fileMode = on && !off;
-		} else {
-			fileMode = false;
-		}
+            fileMode = on && !off;
+        } else {
+            fileMode = false;
+        }
 
-		SymLinks symLinks = SymLinks.FALSE;
-		if (getFS().supportsSymlinks()) {
-			File tmp = new File(getDirectory(), "tmplink"); //$NON-NLS-1$
-			try {
-				getFS().createSymLink(tmp, "target"); //$NON-NLS-1$
-				symLinks = null;
-				FileUtils.delete(tmp);
-			} catch (IOException e) {
-				// Normally a java.nio.file.FileSystemException
-			}
-		}
-		if (symLinks != null)
-			cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
-					ConfigConstants.CONFIG_KEY_SYMLINKS, symLinks.name()
-							.toLowerCase(Locale.ROOT));
-		cfg.setInt(ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
-		cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_FILEMODE, fileMode);
-		if (bare)
-			cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-					ConfigConstants.CONFIG_KEY_BARE, true);
-		cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-				ConfigConstants.CONFIG_KEY_LOGALLREFUPDATES, !bare);
-		if (SystemReader.getInstance().isMacOS())
-			// Java has no other way
-			cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
-					ConfigConstants.CONFIG_KEY_PRECOMPOSEUNICODE, true);
-		if (!bare) {
-			File workTree = getWorkTree();
-			if (!getDirectory().getParentFile().equals(workTree)) {
-				cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
-						ConfigConstants.CONFIG_KEY_WORKTREE, getWorkTree()
-								.getAbsolutePath());
-				LockFile dotGitLockFile = new LockFile(new File(workTree,
-						Constants.DOT_GIT));
-				try {
-					if (dotGitLockFile.lock()) {
-						dotGitLockFile.write(Constants.encode(Constants.GITDIR
-								+ getDirectory().getAbsolutePath()));
-						dotGitLockFile.commit();
-					}
-				} finally {
-					dotGitLockFile.unlock();
-				}
-			}
-		}
-		cfg.save();
-	}
+        SymLinks symLinks = SymLinks.FALSE;
+        if (getFS().supportsSymlinks()) {
+            File tmp = new File(getDirectory(), "tmplink"); //$NON-NLS-1$
+            try {
+                getFS().createSymLink(tmp, "target"); //$NON-NLS-1$
+                symLinks = null;
+                FileUtils.delete(tmp);
+            } catch (IOException e) {
+                // Normally a java.nio.file.FileSystemException
+            }
+        }
+        if (symLinks != null) {
+            cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
+                    ConfigConstants.CONFIG_KEY_SYMLINKS, symLinks.name()
+                            .toLowerCase(Locale.ROOT));
+        }
+        cfg.setInt(ConfigConstants.CONFIG_CORE_SECTION, null,
+                ConfigConstants.CONFIG_KEY_REPO_FORMAT_VERSION, 0);
+        cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+                ConfigConstants.CONFIG_KEY_FILEMODE, fileMode);
+        if (bare) {
+            cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+                    ConfigConstants.CONFIG_KEY_BARE, true);
+        }
+        cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+                ConfigConstants.CONFIG_KEY_LOGALLREFUPDATES, !bare);
+        if (SystemReader.getInstance().isMacOS()) {
+            // Java has no other way
+            cfg.setBoolean(ConfigConstants.CONFIG_CORE_SECTION, null,
+                    ConfigConstants.CONFIG_KEY_PRECOMPOSEUNICODE, true);
+        }
+        if (!bare) {
+            File workTree = getWorkTree();
+            if (!getDirectory().getParentFile().equals(workTree)) {
+                cfg.setString(ConfigConstants.CONFIG_CORE_SECTION, null,
+                        ConfigConstants.CONFIG_KEY_WORKTREE, getWorkTree()
+                                .getAbsolutePath());
+                LockFile dotGitLockFile = new LockFile(new File(workTree,
+                        Constants.DOT_GIT));
+                try {
+                    if (dotGitLockFile.lock()) {
+                        dotGitLockFile.write(Constants.encode(Constants.GITDIR
+                                + getDirectory().getAbsolutePath()));
+                        dotGitLockFile.commit();
+                    }
+                } finally {
+                    dotGitLockFile.unlock();
+                }
+            }
+        }
+        cfg.save();
+    }
 
-	/**
-	 * Get the directory containing the objects owned by this repository
-	 *
-	 * @return the directory containing the objects owned by this repository.
-	 */
-	public File getObjectsDirectory() {
-		return objectDatabase.getDirectory();
-	}
 
-	/** {@inheritDoc} */
-	@Override
-	public ObjectDirectory getObjectDatabase() {
-		return objectDatabase;
-	}
+    /**
+     * Create a new Git repository initializing the necessary files and
+     * directories.
+     *
+     * @param bare if true, a bare repository is created.
+     * @throws IOException in case of IO problem
+     */
+    public void create(boolean bare) throws IOException {
 
-	/** {@inheritDoc} */
-	@Override
-	public RefDatabase getRefDatabase() {
-		return refs;
-	}
+        if (!ReplicationConfiguration.isReplicatedSystem()) {
+            //unreplicated deployment fall through due to insufficient settings
+            LOG.debug("Detected a non-replicated system setup - using replicated Jgit library.\n" +
+                    "Continuing as if non-replicated. If not doing an installation, please check setup.\n" +
+                    "Consider using vanilla JGit, or correctly enable replication with this library.");
+            unreplicatedCreate(bare);
+            return;
+        }
 
-	/** {@inheritDoc} */
-	@Override
-	public FileBasedConfig getConfig() {
-		try {
-			SystemReader.getInstance().getUserConfig();
-			if (repoConfig.isOutdated()) {
-				loadRepoConfig();
-			}
-		} catch (IOException | ConfigInvalidException e) {
-			throw new RuntimeException(e);
-		}
-		return repoConfig;
-	}
+        replicatedCreate(getDirectory().getAbsolutePath());
+    }
 
-	/** {@inheritDoc} */
-	@Override
-	@Nullable
-	public String getGitwebDescription() throws IOException {
-		String d;
-		try {
-			d = RawParseUtils.decode(IO.readFully(descriptionFile()));
-		} catch (FileNotFoundException err) {
-			return null;
-		}
-		if (d != null) {
-			d = d.trim();
-			if (d.isEmpty() || UNNAMED.equals(d)) {
-				return null;
-			}
-		}
-		return d;
-	}
+    /**
+     * Get the directory containing the objects owned by this repository
+     *
+     * @return the directory containing the objects owned by this repository.
+     */
+    public File getObjectsDirectory() {
+        return objectDatabase.getDirectory();
+    }
 
-	/** {@inheritDoc} */
-	@Override
-	public void setGitwebDescription(@Nullable String description)
-			throws IOException {
-		String old = getGitwebDescription();
-		if (Objects.equals(old, description)) {
-			return;
-		}
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public ObjectDirectory getObjectDatabase() {
+        return objectDatabase;
+    }
 
-		File path = descriptionFile();
-		LockFile lock = new LockFile(path);
-		if (!lock.lock()) {
-			throw new IOException(MessageFormat.format(JGitText.get().lockError,
-					path.getAbsolutePath()));
-		}
-		try {
-			String d = description;
-			if (d != null) {
-				d = d.trim();
-				if (!d.isEmpty()) {
-					d += '\n';
-				}
-			} else {
-				d = ""; //$NON-NLS-1$
-			}
-			lock.write(Constants.encode(d));
-			lock.commit();
-		} finally {
-			lock.unlock();
-		}
-	}
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public RefDatabase getRefDatabase() {
+        return refs;
+    }
 
-	private File descriptionFile() {
-		return new File(getDirectory(), "description"); //$NON-NLS-1$
-	}
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public FileBasedConfig getConfig() {
+        try {
+            SystemReader.getInstance().getUserConfig();
+            if (repoConfig.isOutdated()) {
+                loadRepoConfig();
+            }
+        } catch (IOException | ConfigInvalidException e) {
+            throw new RuntimeException(e);
+        }
+        return repoConfig;
+    }
 
-	/**
-	 * {@inheritDoc}
-	 * <p>
-	 * Objects known to exist but not expressed by {@code #getAllRefs()}.
-	 * <p>
-	 * When a repository borrows objects from another repository, it can
-	 * advertise that it safely has that other repository's references, without
-	 * exposing any other details about the other repository. This may help a
-	 * client trying to push changes avoid pushing more than it needs to.
-	 */
-	@Override
-	public Set<ObjectId> getAdditionalHaves() {
-		return getAdditionalHaves(null);
-	}
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Nullable
+    public String getGitwebDescription() throws IOException {
+        String d;
+        try {
+            d = RawParseUtils.decode(IO.readFully(descriptionFile()));
+        } catch (FileNotFoundException err) {
+            return null;
+        }
+        if (d != null) {
+            d = d.trim();
+            if (d.isEmpty() || UNNAMED.equals(d)) {
+                return null;
+            }
+        }
+        return d;
+    }
 
-	/**
-	 * Objects known to exist but not expressed by {@code #getAllRefs()}.
-	 * <p>
-	 * When a repository borrows objects from another repository, it can
-	 * advertise that it safely has that other repository's references, without
-	 * exposing any other details about the other repository. This may help a
-	 * client trying to push changes avoid pushing more than it needs to.
-	 *
-	 * @param skips
-	 *            Set of AlternateHandle Ids already seen
-	 *
-	 * @return unmodifiable collection of other known objects.
-	 */
-	private Set<ObjectId> getAdditionalHaves(Set<AlternateHandle.Id> skips) {
-		HashSet<ObjectId> r = new HashSet<>();
-		skips = objectDatabase.addMe(skips);
-		for (AlternateHandle d : objectDatabase.myAlternates()) {
-			if (d instanceof AlternateRepository && !skips.contains(d.getId())) {
-				FileRepository repo;
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void setGitwebDescription(@Nullable String description)
+            throws IOException {
+        String old = getGitwebDescription();
+        if (Objects.equals(old, description)) {
+            return;
+        }
 
-				repo = ((AlternateRepository) d).repository;
-				for (Ref ref : repo.getAllRefs().values()) {
-					if (ref.getObjectId() != null)
-						r.add(ref.getObjectId());
-					if (ref.getPeeledObjectId() != null)
-						r.add(ref.getPeeledObjectId());
-				}
-				r.addAll(repo.getAdditionalHaves(skips));
-			}
-		}
-		return r;
-	}
+        File path = descriptionFile();
+        LockFile lock = new LockFile(path);
+        if (!lock.lock()) {
+            throw new IOException(MessageFormat.format(JGitText.get().lockError,
+                    path.getAbsolutePath()));
+        }
+        try {
+            String d = description;
+            if (d != null) {
+                d = d.trim();
+                if (!d.isEmpty()) {
+                    d += '\n';
+                }
+            } else {
+                d = ""; //$NON-NLS-1$
+            }
+            lock.write(Constants.encode(d));
+            lock.commit();
+        } finally {
+            lock.unlock();
+        }
+    }
 
-	/**
-	 * Add a single existing pack to the list of available pack files.
-	 *
-	 * @param pack
-	 *            path of the pack file to open.
-	 * @throws java.io.IOException
-	 *             index file could not be opened, read, or is not recognized as
-	 *             a Git pack file index.
-	 */
-	public void openPack(File pack) throws IOException {
-		objectDatabase.openPack(pack);
-	}
+    private File descriptionFile() {
+        return new File(getDirectory(), "description"); //$NON-NLS-1$
+    }
 
-	/** {@inheritDoc} */
-	@Override
-	public void scanForRepoChanges() throws IOException {
-		getRefDatabase().getRefs(); // This will look for changes to refs
-		detectIndexChanges();
-	}
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Objects known to exist but not expressed by {@code #getAllRefs()}.
+     * <p>
+     * When a repository borrows objects from another repository, it can
+     * advertise that it safely has that other repository's references, without
+     * exposing any other details about the other repository. This may help a
+     * client trying to push changes avoid pushing more than it needs to.
+     */
+    @Override
+    public Set<ObjectId> getAdditionalHaves() {
+        return getAdditionalHaves(null);
+    }
 
-	/** Detect index changes. */
-	private void detectIndexChanges() {
-		if (isBare()) {
-			return;
-		}
+    /**
+     * Objects known to exist but not expressed by {@code #getAllRefs()}.
+     * <p>
+     * When a repository borrows objects from another repository, it can
+     * advertise that it safely has that other repository's references, without
+     * exposing any other details about the other repository. This may help a
+     * client trying to push changes avoid pushing more than it needs to.
+     *
+     * @param skips Set of AlternateHandle Ids already seen
+     * @return unmodifiable collection of other known objects.
+     */
+    private Set<ObjectId> getAdditionalHaves(Set<AlternateHandle.Id> skips) {
+        HashSet<ObjectId> r = new HashSet<>();
+        skips = objectDatabase.addMe(skips);
+        for (AlternateHandle d : objectDatabase.myAlternates()) {
+            if (d instanceof AlternateRepository && !skips.contains(d.getId())) {
+                FileRepository repo;
 
-		File indexFile = getIndexFile();
-		synchronized (snapshotLock) {
-			if (snapshot == null) {
-				snapshot = FileSnapshot.save(indexFile);
-				return;
-			}
-			if (!snapshot.isModified(indexFile)) {
-				return;
-			}
-		}
-		notifyIndexChanged(false);
-	}
+                repo = ((AlternateRepository) d).repository;
+                for (Ref ref : repo.getAllRefs().values()) {
+                    if (ref.getObjectId() != null)
+                        r.add(ref.getObjectId());
+                    if (ref.getPeeledObjectId() != null)
+                        r.add(ref.getPeeledObjectId());
+                }
+                r.addAll(repo.getAdditionalHaves(skips));
+            }
+        }
+        return r;
+    }
 
-	/** {@inheritDoc} */
-	@Override
-	public void notifyIndexChanged(boolean internal) {
-		synchronized (snapshotLock) {
-			snapshot = FileSnapshot.save(getIndexFile());
-		}
-		fireEvent(new IndexChangedEvent(internal));
-	}
+    /**
+     * Add a single existing pack to the list of available pack files.
+     *
+     * @param pack path of the pack file to open.
+     * @throws java.io.IOException index file could not be opened, read, or is not recognized as
+     *                             a Git pack file index.
+     */
+    public void openPack(File pack) throws IOException {
+        objectDatabase.openPack(pack);
+    }
 
-	/** {@inheritDoc} */
-	@Override
-	public ReflogReader getReflogReader(String refName) throws IOException {
-		Ref ref = findRef(refName);
-		if (ref != null)
-			return new ReflogReaderImpl(this, ref.getName());
-		return null;
-	}
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void scanForRepoChanges() throws IOException {
+        getRefDatabase().getRefs(); // This will look for changes to refs
+        detectIndexChanges();
+    }
 
-	/** {@inheritDoc} */
-	@Override
-	public AttributesNodeProvider createAttributesNodeProvider() {
-		return new AttributesNodeProviderImpl(this);
-	}
+    /**
+     * Detect index changes.
+     */
+    private void detectIndexChanges() {
+        if (isBare()) {
+            return;
+        }
 
-	/**
-	 * Implementation a {@link AttributesNodeProvider} for a
-	 * {@link FileRepository}.
-	 *
-	 * @author <a href="mailto:arthur.daussy@obeo.fr">Arthur Daussy</a>
-	 *
-	 */
-	static class AttributesNodeProviderImpl implements
-			AttributesNodeProvider {
+        File indexFile = getIndexFile();
+        synchronized (snapshotLock) {
+            if (snapshot == null) {
+                snapshot = FileSnapshot.save(indexFile);
+                return;
+            }
+            if (!snapshot.isModified(indexFile)) {
+                return;
+            }
+        }
+        notifyIndexChanged(false);
+    }
 
-		private AttributesNode infoAttributesNode;
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void notifyIndexChanged(boolean internal) {
+        synchronized (snapshotLock) {
+            snapshot = FileSnapshot.save(getIndexFile());
+        }
+        fireEvent(new IndexChangedEvent(internal));
+    }
 
-		private AttributesNode globalAttributesNode;
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public ReflogReader getReflogReader(String refName) throws IOException {
+        Ref ref = findRef(refName);
+        if (ref != null)
+            return new ReflogReaderImpl(this, ref.getName());
+        return null;
+    }
 
-		/**
-		 * Constructor.
-		 *
-		 * @param repo
-		 *            {@link Repository} that will provide the attribute nodes.
-		 */
-		protected AttributesNodeProviderImpl(Repository repo) {
-			infoAttributesNode = new InfoAttributesNode(repo);
-			globalAttributesNode = new GlobalAttributesNode(repo);
-		}
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public AttributesNodeProvider createAttributesNodeProvider() {
+        return new AttributesNodeProviderImpl(this);
+    }
 
-		@Override
-		public AttributesNode getInfoAttributesNode() throws IOException {
-			if (infoAttributesNode instanceof InfoAttributesNode)
-				infoAttributesNode = ((InfoAttributesNode) infoAttributesNode)
-						.load();
-			return infoAttributesNode;
-		}
+    /**
+     * Implementation a {@link AttributesNodeProvider} for a
+     * {@link FileRepository}.
+     *
+     * @author <a href="mailto:arthur.daussy@obeo.fr">Arthur Daussy</a>
+     */
+    static class AttributesNodeProviderImpl implements
+            AttributesNodeProvider {
 
-		@Override
-		public AttributesNode getGlobalAttributesNode() throws IOException {
-			if (globalAttributesNode instanceof GlobalAttributesNode)
-				globalAttributesNode = ((GlobalAttributesNode) globalAttributesNode)
-						.load();
-			return globalAttributesNode;
-		}
+        private AttributesNode infoAttributesNode;
 
-		static void loadRulesFromFile(AttributesNode r, File attrs)
-				throws FileNotFoundException, IOException {
-			if (attrs.exists()) {
-				try (FileInputStream in = new FileInputStream(attrs)) {
-					r.parse(in);
-				}
-			}
-		}
+        private AttributesNode globalAttributesNode;
 
-	}
+        /**
+         * Constructor.
+         *
+         * @param repo {@link Repository} that will provide the attribute nodes.
+         */
+        protected AttributesNodeProviderImpl(Repository repo) {
+            infoAttributesNode = new InfoAttributesNode(repo);
+            globalAttributesNode = new GlobalAttributesNode(repo);
+        }
 
-	private boolean shouldAutoDetach() {
-		return getConfig().getBoolean(ConfigConstants.CONFIG_GC_SECTION,
-				ConfigConstants.CONFIG_KEY_AUTODETACH, true);
-	}
+        @Override
+        public AttributesNode getInfoAttributesNode() throws IOException {
+            if (infoAttributesNode instanceof InfoAttributesNode)
+                infoAttributesNode = ((InfoAttributesNode) infoAttributesNode)
+                        .load();
+            return infoAttributesNode;
+        }
 
-	/** {@inheritDoc} */
-	@Override
-	public void autoGC(ProgressMonitor monitor) {
-		GC gc = new GC(this);
-		gc.setPackConfig(new PackConfig(this));
-		gc.setProgressMonitor(monitor);
-		gc.setAuto(true);
-		gc.setBackground(shouldAutoDetach());
-		try {
-			gc.gc();
-		} catch (ParseException | IOException e) {
-			throw new JGitInternalException(JGitText.get().gcFailed, e);
-		}
-	}
+        @Override
+        public AttributesNode getGlobalAttributesNode() throws IOException {
+            if (globalAttributesNode instanceof GlobalAttributesNode)
+                globalAttributesNode = ((GlobalAttributesNode) globalAttributesNode)
+                        .load();
+            return globalAttributesNode;
+        }
+
+        static void loadRulesFromFile(AttributesNode r, File attrs)
+                throws FileNotFoundException, IOException {
+            if (attrs.exists()) {
+                try (FileInputStream in = new FileInputStream(attrs)) {
+                    r.parse(in);
+                }
+            }
+        }
+
+    }
+
+    private boolean shouldAutoDetach() {
+        return getConfig().getBoolean(ConfigConstants.CONFIG_GC_SECTION,
+                ConfigConstants.CONFIG_KEY_AUTODETACH, true);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void autoGC(ProgressMonitor monitor) {
+        GC gc = new GC(this);
+        gc.setPackConfig(new PackConfig(this));
+        gc.setProgressMonitor(monitor);
+        gc.setAuto(true);
+        gc.setBackground(shouldAutoDetach());
+        try {
+            gc.gc();
+        } catch (ParseException | IOException e) {
+            throw new JGitInternalException(JGitText.get().gcFailed, e);
+        }
+    }
 }

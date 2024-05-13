@@ -379,6 +379,30 @@ public final class Constants {
 	/** A bare repository typically ends with this string */
 	public static final String DOT_GIT_EXT = ".git";
 
+	/** WANdisco Replication Settings section. */
+
+	/**
+	 * A replication setting which can override default behaviour of this jar,
+	 * to behave as a non replicated one.
+	 *
+	 * @since 5.1.12-RP
+	 */
+	public static final String REPLICATION_DISABLED = "gerritms_replication_disabled";
+
+	/**
+	 * Allow system to be overriden and use the old rp-git-update script for replication of git RefUpdate calls.
+	 * This allow us to change back to old behaviour if we need to diagnose any update issues.
+	 * @since 5.1.12-RP
+	 */
+	public static final String REPLICATION_USE_GIT_UPDATE_SCRIPT = "gitms_replication_use_remote_update_script";
+
+	/**
+	 * Allows RefUpdate dev logging to be enabled.. Note this logging isn't unique / per file etc, and is meant for
+	 * internal use only - NOT FOR PRODUCTION SYSTEMS!!!
+	 * @since 5.1.12-RP
+	 */
+	public static final String REPLICATION_REFUPDATE_LOGGING = "gitms_ref_update_logging";  // DEV USE ONLY
+
 	/**
 	 * Name of the attributes file
 	 *

@@ -41,6 +41,18 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.lib;
 
@@ -59,6 +71,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
@@ -104,6 +117,9 @@ public class BatchRefUpdate {
 
 	/** Should the result value be appended to {@link #refLogMessage}. */
 	private boolean refLogIncludeResult;
+
+	/** Should the update be replicated. */
+	protected boolean replicated = true;
 
 	/**
 	 * Should reflogs be written even if the configured default for this ref is
@@ -182,6 +198,26 @@ public class BatchRefUpdate {
 	 */
 	public BatchRefUpdate setRefLogIdent(PersonIdent pi) {
 		refLogIdent = pi;
+		return this;
+	}
+
+	/**
+	 * Get if this command is to be replicated... By default it is - but this can be disabled for non-replicated
+	 * commands... Say gitms performing an update.
+	 * @return boolean
+	 */
+	public boolean isReplicated() {
+		return replicated;
+	}
+
+	/**
+	 * Set if the BatchRefUpdate operations should be replicated or not.
+	 *
+	 * @param replicated
+	 * @return {@code this}
+	 */
+	public BatchRefUpdate isReplicated(final boolean replicated) {
+		this.replicated = replicated;
 		return this;
 	}
 
@@ -475,6 +511,9 @@ public class BatchRefUpdate {
 	public void execute(RevWalk walk, ProgressMonitor monitor,
 			List<String> options) throws IOException {
 
+		// get the username for this thread context before we do anything else.
+		String user = RefUpdate.getUsernameAndClear();
+
 		if (atomic && !refdb.performsAtomicTransactions()) {
 			for (ReceiveCommand c : commands) {
 				if (c.getResult() == NOT_ATTEMPTED) {
@@ -495,9 +534,17 @@ public class BatchRefUpdate {
 		monitor.beginTask(JGitText.get().updatingReferences, commands.size());
 		List<ReceiveCommand> commands2 = new ArrayList<>(
 				commands.size());
+
 		// First delete refs. This may free the name space for some of the
 		// updates.
 		for (ReceiveCommand cmd : commands) {
+			// regardless of the command being issued, if we have been given a username, we better make it
+			// available for each sub command being issued, otherwise it would be lost after the first command as
+			// its cleared...
+			if ( user != null ){
+				RefUpdate.setUsername(user);
+			}
+
 			try {
 				if (cmd.getResult() == NOT_ATTEMPTED) {
 					if (isMissing(walk, cmd.getOldId())
@@ -517,17 +564,27 @@ public class BatchRefUpdate {
 					case DELETE:
 						RefUpdate rud = newUpdate(cmd);
 						monitor.update(1);
-						cmd.setResult(rud.delete(walk));
+                                                if (replicated) {
+                                                  cmd.setResult(rud.delete(walk));
+                                                } else {
+                                                  cmd.setResult(rud.unreplicatedDelete(walk));
+                                                }
 					}
 				}
 			} catch (IOException err) {
-				cmd.setResult(
-						REJECTED_OTHER_REASON,
-						MessageFormat.format(JGitText.get().lockError,
-								err.getMessage()));
+				final Throwable rootCause = ExceptionUtils.getRootCause(err);
+				cmd.setResult(REJECTED_OTHER_REASON,
+							  MessageFormat.format(JGitText.get().lockError, rootCause.getMessage()));
 			}
 		}
+
+		// TODO: trevorg look at batch ref update, it looks like we are splitting apart the operations here
+		// and firing them out one at a time... When this is meant as an atomic all or nothing operation we could easily
+		// have got 2 of 3 done.... and not roll back.... This should be a new proposal...!!  See packedbatchrefupdate.
+		// So its critical to work out if we have more than 1 command here,
+		// also note phase 1 delete could have added to this.. ARG!!
 		if (!commands2.isEmpty()) {
+
 			// What part of the name space is already taken
 			Collection<String> takenNames = refdb.getRefs().stream()
 					.map(Ref::getName)
@@ -536,6 +593,13 @@ public class BatchRefUpdate {
 
 			// Now to the update that may require more room in the name space
 			for (ReceiveCommand cmd : commands2) {
+				// regardless of the command being issued, if we have been given a username, we better make it
+				// available for each sub command being issued, otherwise it would be lost after the first command as
+				// its cleared...
+				if ( user != null ){
+					RefUpdate.setUsername(user);
+				}
+
 				try {
 					if (cmd.getResult() == NOT_ATTEMPTED) {
 						cmd.updateType(walk);
@@ -546,8 +610,12 @@ public class BatchRefUpdate {
 							break;
 						case UPDATE:
 						case UPDATE_NONFASTFORWARD:
-							RefUpdate ruu = newUpdate(cmd);
-							cmd.setResult(ruu.update(walk));
+							if (replicated) {
+								cmd.setResult(ru.update(walk));
+							} else {
+								cmd.setResult(ru.unreplicatedUpdate(walk));
+							}
+
 							break;
 						case CREATE:
 							for (String prefix : getPrefixes(cmd.getRefName())) {
@@ -563,12 +631,17 @@ public class BatchRefUpdate {
 							ru.setCheckConflicting(false);
 							takenPrefixes.addAll(getPrefixes(cmd.getRefName()));
 							takenNames.add(cmd.getRefName());
-							cmd.setResult(ru.update(walk));
+							if (replicated) {
+							  cmd.setResult(ru.update(walk));
+							} else {
+							  cmd.setResult(ru.unreplicatedUpdate(walk));
+							}
 						}
 					}
 				} catch (IOException err) {
-					cmd.setResult(REJECTED_OTHER_REASON, MessageFormat.format(
-							JGitText.get().lockError, err.getMessage()));
+					final Throwable rootCause = ExceptionUtils.getRootCause(err);
+					cmd.setResult(REJECTED_OTHER_REASON,
+								  MessageFormat.format(JGitText.get().lockError, rootCause.getMessage()));
 				} finally {
 					monitor.update(1);
 				}

@@ -32,6 +32,14 @@ java_library(
 )
 
 java_library(
+    name = "gerrit-gitms-interface",
+    # TODO: TREV This should be provided dependency... but org.eclipse.jgit.lfs.server depends on it.
+    visibility = ["//org.eclipse.jgit.lfs.server:__pkg__",
+                  "//org.eclipse.jgit:__pkg__"],
+    exports = ["@gerrit-gitms-interface//jar"],
+)
+
+java_library(
     name = "gson",
     visibility = [
         "//org.eclipse.jgit.lfs:__pkg__",

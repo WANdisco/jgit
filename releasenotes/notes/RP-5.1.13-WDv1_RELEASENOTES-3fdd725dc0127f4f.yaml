@@ -1,0 +1,3 @@
+---
+features:
+  - Support replication disabled configuration for batch operations
