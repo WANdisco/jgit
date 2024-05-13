@@ -40,8 +40,30 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.util;
+
+import org.eclipse.jgit.annotations.Nullable;
+import org.eclipse.jgit.api.errors.JGitInternalException;
+import org.eclipse.jgit.errors.CommandFailedException;
+import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.util.ProcessResult.Status;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -52,6 +74,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.text.MessageFormat;
@@ -65,16 +89,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-
-import org.eclipse.jgit.annotations.Nullable;
-import org.eclipse.jgit.api.errors.JGitInternalException;
-import org.eclipse.jgit.errors.CommandFailedException;
-import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.util.ProcessResult.Status;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /** Abstraction to support various file system operations not in Java. */
 public abstract class FS {
@@ -311,7 +325,7 @@ public abstract class FS {
 	 * @since 3.0
 	 */
 	public long lastModified(File f) throws IOException {
-		return FileUtils.lastModified(f);
+		return Files.getLastModifiedTime(f.toPath(), LinkOption.NOFOLLOW_LINKS).toMillis();
 	}
 
 	/**
@@ -1327,7 +1341,11 @@ public abstract class FS {
 		boolean exists = isDirectory || isFile;
 		boolean canExecute = exists && !isDirectory && canExecute(path);
 		boolean isSymlink = false;
-		long lastModified = exists ? path.lastModified() : 0L;
+		long lastModified = 0;
+		try {
+			lastModified = exists ? Files.getLastModifiedTime(path.toPath(), LinkOption.NOFOLLOW_LINKS).toMillis() : 0L;
+		} catch (IOException e) { lastModified = 0L;
+		}
 		long createTime = 0L;
 		return new Attributes(this, path, exists, isDirectory, canExecute,
 				isSymlink, isFile, createTime, lastModified, -1);

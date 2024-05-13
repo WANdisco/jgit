@@ -40,6 +40,18 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.pgm.debug;
 
@@ -228,7 +240,8 @@ class LfsStore extends TextBuiltin {
 		switch (storeType) {
 		case FS:
 			Path dir = Paths.get(directory);
-			FileLfsRepository fsRepo = new FileLfsRepository(
+                        // TODO LFS support for command line? 
+                        FileLfsRepository fsRepo = new FileLfsRepository(
 					getStoreUrl(baseURI), dir);
 			FileLfsServlet content = new FileLfsServlet(fsRepo, 30000);
 			app.addServlet(new ServletHolder(content), STORE_PATH);

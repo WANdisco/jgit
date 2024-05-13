@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016, David Pursehouse <david.pursehouse@gmail.com>
+ * Copyright (C) 2018, Google LLC.
  * and other copyright owners as documented in the project's IP log.
  *
  * This program and the accompanying materials are made available
@@ -40,45 +40,47 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-/********************************************************************************
- * Copyright (c) 2018 Contributors to the Eclipse Foundation
- *
- * See the NOTICE file(s) distributed with this work for additional
- * information regarding copyright ownership.
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0
- *
- * SPDX-License-Identifier: EPL-2.0
- ********************************************************************************/
-package org.eclipse.jgit.lfs.errors;
+package org.eclipse.jgit.lib;
 
-import java.text.MessageFormat;
-
-import org.eclipse.jgit.lfs.internal.LfsText;
+import org.eclipse.jgit.lib.AnyObjectId;
 
 /**
- * Thrown when the repository does not exist for the user.
+ * A .gitmodules file found in the pack. Store the blob of the file itself (e.g.
+ * to access its contents) and the tree where it was found (e.g. to check if it
+ * is in the root)
  *
- * @since 4.5
+ * @since 4.7.5
  */
-public class LfsRepositoryNotFound extends LfsException {
+public final class GitmoduleEntry {
+    private final AnyObjectId treeId;
 
-    private static final long serialVersionUID = 1L;
+    private final AnyObjectId blobId;
 
     /**
-     * @param name the repository name.
+     * A record of (tree, blob) for a .gitmodule file in a pack
      *
+     * @param treeId
+     *            tree id containing a .gitmodules entry
+     * @param blobId
+     *            id of the blob of the .gitmodules file
      */
-    public LfsRepositoryNotFound(String name) {
-        super(MessageFormat.format(LfsText.get().repositoryNotFound, name));
+    public GitmoduleEntry(AnyObjectId treeId, AnyObjectId blobId) {
+        // AnyObjectId's are reused, must keep a copy.
+        this.treeId = treeId.copy();
+        this.blobId = blobId.copy();
     }
 
-    public LfsRepositoryNotFound(Exception e)
-    {
-        // assuming someone has raised a general exception and wishes to convey it as
-        // a repo not found just copy across the message they generated.
-        super(e.getMessage());
+    /**
+     * @return Id of a .gitmodules file found in the pack
+     */
+    public AnyObjectId getBlobId() {
+        return blobId;
+    }
+
+    /**
+     * @return Id of a tree object where the .gitmodules file was found
+     */
+    public AnyObjectId getTreeId() {
+        return treeId;
     }
 }

@@ -3,3 +3,8 @@
 /buck-cache
 /buck-out
 /target
+*.iml
+/.idea
+*.versionsBackup
+nb-configuration\.xml
+THIRD-PARTY\.properties

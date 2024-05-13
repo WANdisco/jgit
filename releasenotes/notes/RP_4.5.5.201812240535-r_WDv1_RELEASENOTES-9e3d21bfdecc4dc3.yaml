@@ -1,0 +1,3 @@
+---
+fixes:
+  - AdvertiseRefsHook critical fix commit - https://github.com/WANdisco/jgit/commit/61f0bd54d058789d73a8db0dfb8d23310aa8c411
