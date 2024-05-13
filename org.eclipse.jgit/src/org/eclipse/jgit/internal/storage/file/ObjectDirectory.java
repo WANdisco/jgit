@@ -40,6 +40,18 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.internal.storage.file;
 
@@ -77,13 +89,13 @@ import org.eclipse.jgit.internal.storage.pack.PackWriter;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.Config;
-import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectDatabase;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.RepositoryCache;
 import org.eclipse.jgit.lib.RepositoryCache.FileKey;
+import org.eclipse.jgit.util.ConfigReader;
 import org.eclipse.jgit.util.FS;
 import org.eclipse.jgit.util.FileUtils;
 import org.slf4j.Logger;
@@ -117,6 +129,17 @@ public class ObjectDirectory extends FileObjectDatabase {
 	/** Maximum number of candidates offered as resolutions of abbreviation. */
 	private static final int RESOLVE_ABBREV_LIMIT = 256;
 
+	private static final int PACKED_OBJECT_RESCAN_COUNT_DEFAULT = -1;
+
+	private static final int PACKED_OBJECT_RESCAN_SIMPLIFIED = 0;
+
+	/** Used to rescan packed objects if they failed to be read in first scan
+	 * a value of -1 indicates that no rescan should occur and just use existing logic.
+	 */
+	private static int PACKED_OBJECT_RESCAN_COUNT = PACKED_OBJECT_RESCAN_COUNT_DEFAULT;
+
+	private static boolean SCAN_COUNT_INITIALIZED = false;
+
 	private final Config config;
 
 	private final File objects;
@@ -126,8 +149,6 @@ public class ObjectDirectory extends FileObjectDatabase {
 	private final File packDirectory;
 
 	private final File alternatesFile;
-
-	private final AtomicReference<PackList> packList;
 
 	private final FS fs;
 
@@ -140,6 +161,8 @@ public class ObjectDirectory extends FileObjectDatabase {
 	private FileSnapshot shallowFileSnapshot = FileSnapshot.DIRTY;
 
 	private Set<ObjectId> shallowCommitsIds;
+
+	final AtomicReference<PackList> packList;
 
 	/**
 	 * Initialize a reference to an on-disk object directory.
@@ -411,21 +434,50 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return null;
 	}
 
+	private synchronized int getRescanCount() {
+
+		if (SCAN_COUNT_INITIALIZED) {
+			return PACKED_OBJECT_RESCAN_COUNT;
+		}
+
+		try {
+			PACKED_OBJECT_RESCAN_COUNT = Integer.parseInt(
+					ConfigReader.getGitConfigProperty("wdjgit", null,
+					"rescanCount", Integer.toString(PACKED_OBJECT_RESCAN_COUNT_DEFAULT)));
+		} catch (IOException | NumberFormatException e) {
+			LOG.warn("Failed to read pack object rescan count from config.  Assuming default behaviour.", e);
+			PACKED_OBJECT_RESCAN_COUNT = PACKED_OBJECT_RESCAN_COUNT_DEFAULT;
+		} finally {
+			SCAN_COUNT_INITIALIZED = true;
+		}
+		return PACKED_OBJECT_RESCAN_COUNT;
+	}
+
+
 	ObjectLoader openPackedObject(WindowCursor curs, AnyObjectId objectId) {
+
+		int rescanCount = (SCAN_COUNT_INITIALIZED == true ? PACKED_OBJECT_RESCAN_COUNT : getRescanCount());
+
+		if (rescanCount > 0) {
+			return openPackedObjectFinite(curs, objectId, PACKED_OBJECT_RESCAN_COUNT);
+		} else if (rescanCount == PACKED_OBJECT_RESCAN_SIMPLIFIED) {
+			return openPackedObjectSimplified(curs, objectId);
+		}
+
+		// process as normal
 		PackList pList;
 		do {
-			SEARCH: for (;;) {
+			SEARCH:
+			for (; ; ) {
 				pList = packList.get();
 				for (PackFile p : pList.packs) {
 					try {
 						ObjectLoader ldr = p.get(curs, objectId);
 						p.resetTransientErrorCount();
-						if (ldr != null)
-							return ldr;
+						if (ldr != null) { return ldr; }
 					} catch (PackMismatchException e) {
 						// Pack was modified; refresh the entire pack list.
-						if (searchPacksAgain(pList))
-							continue SEARCH;
+						if (searchPacksAgain(pList)) { continue SEARCH; }
 					} catch (IOException e) {
 						handlePackError(e, p);
 					}
@@ -433,6 +485,74 @@ public class ObjectDirectory extends FileObjectDatabase {
 				break SEARCH;
 			}
 		} while (searchPacksAgain(pList));
+
+		return null;
+	}
+
+	private ObjectLoader openPackedObjectFinite(WindowCursor curs, AnyObjectId objectId, int rescanCount) {
+		ObjectLoader ldr = null;
+		int count = 0;
+		do {
+			ldr = openPackedObjectWithRetry(curs, objectId);
+			if (ldr != null) {
+				return ldr;
+			}
+			count++;
+
+		} while ((count < rescanCount) && searchPacksAgain(packList.get()));
+
+		return null;
+	}
+
+	private ObjectLoader openPackedObjectSimplified(WindowCursor curs, AnyObjectId objectId) {
+		ObjectLoader ldr = null;
+		do {
+			ldr = openPackedObjectWithRetry(curs, objectId);
+			if (ldr != null) {
+				return ldr;
+			}
+		} while (searchPacksAgain(packList.get()));
+
+		return null;
+	}
+
+	ObjectLoader openPackedObjectWithRetry(WindowCursor curs, AnyObjectId objectId) {
+		PackList pList = packList.get();
+		List<String> packNamesToRetry = new ArrayList<>();
+		for (PackFile p : pList.packs) {
+			try {
+				ObjectLoader ldr = p.get(curs, objectId);
+				p.resetTransientErrorCount();
+				if (ldr != null) { return ldr; }
+			} catch (PackMismatchException e) {
+				// Pack was modified; refresh the entire pack list.
+				packNamesToRetry.add(p.getPackName());
+			} catch (IOException e) {
+				handlePackError(e, p);
+				packNamesToRetry.add(p.getPackName());
+			}
+		}
+
+		for (String packName : packNamesToRetry) {
+			// refresh the packs
+			pList = packList.get();
+			for (PackFile pf : pList.packs) {
+				// only load the object if it is one of the ones we are looking for
+				if (pf.getPackName().equals(packName)) {
+					try {
+						ObjectLoader ldr = pf.get(curs, objectId);
+						pf.resetTransientErrorCount();
+						if (ldr != null) { return ldr; }
+					} catch (PackMismatchException e) {
+						// NOTHING TO DO
+
+					} catch (IOException ex) {
+						handlePackError(ex, pf);
+					}
+				}
+			}
+		}
+
 		return null;
 	}
 
@@ -581,13 +701,8 @@ public class ObjectDirectory extends FileObjectDatabase {
 			transientErrorCount = p.incrementTransientErrorCount();
 		}
 		if (warnTmpl != null) {
-			if (LOG.isDebugEnabled()) {
-				LOG.debug(MessageFormat.format(warnTmpl,
-						p.getPackFile().getAbsolutePath()), e);
-			} else {
-				LOG.warn(MessageFormat.format(warnTmpl,
-						p.getPackFile().getAbsolutePath()));
-			}
+			LOG.warn(MessageFormat.format(warnTmpl,
+					p.getPackFile().getAbsolutePath()), e);
 		} else {
 			if (doLogExponentialBackoff(transientErrorCount)) {
 				// Don't remove the pack from the list, as the error may be
@@ -674,19 +789,28 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return InsertLooseObjectResult.FAILURE;
 	}
 
-	private boolean searchPacksAgain(PackList old) {
-		// Whether to trust the pack folder's modification time. If set
-		// to false we will always scan the .git/objects/pack folder to
-		// check for new pack files. If set to true (default) we use the
-		// lastmodified attribute of the folder and assume that no new
-		// pack files can be in this folder if his modification time has
-		// not changed.
+	boolean searchPacksAgain(PackList old) {
+		/**
+                 * It looks like the JGit project ran into a similar issue as we
+                 * did here. The lastmodified time of the packfile does not appear
+                 * to be entirely reliable. Commenting this out here for reference
+                 * instead of replacing our version, as we would always just set
+                 * this property to false anyway.
+                 * 
+                 * Whether to trust the pack folder's modification time. If set
+		 * to false we will always scan the .git/objects/pack folder to
+		 * check for new pack files. If set to true (default) we use the
+		 * lastmodified attribute of the folder and assume that no new
+		 * pack files can be in this folder if his modification time has
+		 * not changed.
 		boolean trustFolderStat = config.getBoolean(
 				ConfigConstants.CONFIG_CORE_SECTION,
 				ConfigConstants.CONFIG_KEY_TRUSTFOLDERSTAT, true);
 
 		return ((!trustFolderStat) || old.snapshot.isModified(packDirectory))
-				&& old != scanPacks(old);
+				&& old != scanPacks(old); 
+                */
+            return old != scanPacks(old);
 	}
 
 	Config getConfig() {
@@ -820,13 +944,14 @@ public class ObjectDirectory extends FileObjectDatabase {
 			}
 
 			final String packName = base + PACK.getExtension();
+			final File packFile = new File(packDirectory, packName);
 			final PackFile oldPack = forReuse.remove(packName);
-			if (oldPack != null) {
+			if (oldPack != null
+					&& !oldPack.getFileSnapshot().isModified(packFile)) {
 				list.add(oldPack);
 				continue;
 			}
 
-			final File packFile = new File(packDirectory, packName);
 			list.add(new PackFile(packFile, extensions));
 			foundNew = true;
 		}
@@ -960,7 +1085,7 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return new File(new File(getDirectory(), d), f);
 	}
 
-	private static final class PackList {
+	static final class PackList {
 		/** State just before reading the pack directory. */
 		final FileSnapshot snapshot;
 

@@ -40,11 +40,26 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.internal.storage.file;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -69,6 +84,14 @@ import org.eclipse.jgit.util.FS;
  * file is less than 3 seconds ago.
  */
 public class FileSnapshot {
+
+	/**
+	 * An unknown file size.
+	 *
+	 * This value is used when a comparison needs to happen purely on the lastUpdate.
+	 */
+	public static final long UNKNOWN_SIZE = -1;
+
 	/**
 	 * A FileSnapshot that is considered to always be modified.
 	 * <p>
@@ -76,7 +99,7 @@ public class FileSnapshot {
 	 * file, but only after {@link #isModified(File)} gets invoked. The returned
 	 * snapshot contains only invalid status information.
 	 */
-	public static final FileSnapshot DIRTY = new FileSnapshot(-1, -1);
+	public static final FileSnapshot DIRTY = new FileSnapshot(-1, -1, UNKNOWN_SIZE);
 
 	/**
 	 * A FileSnapshot that is clean if the file does not exist.
@@ -85,7 +108,7 @@ public class FileSnapshot {
 	 * file to be clean. {@link #isModified(File)} will return false if the file
 	 * path does not exist.
 	 */
-	public static final FileSnapshot MISSING_FILE = new FileSnapshot(0, 0) {
+	public static final FileSnapshot MISSING_FILE = new FileSnapshot(0, 0, 0) {
 		@Override
 		public boolean isModified(File path) {
 			return FS.DETECTED.exists(path);
@@ -103,14 +126,18 @@ public class FileSnapshot {
 	 * @return the snapshot.
 	 */
 	public static FileSnapshot save(File path) {
-		long read = System.currentTimeMillis();
+		final long read = System.currentTimeMillis();
 		long modified;
-		try {
-			modified = FS.DETECTED.lastModified(path);
-		} catch (IOException e) {
-			modified = path.lastModified();
-		}
-		return new FileSnapshot(read, modified);
+		long size;
+    try {
+		BasicFileAttributes fileAttributes = FS.DETECTED.fileAttributes(path);
+		modified = fileAttributes.lastModifiedTime().toMillis();
+		size = fileAttributes.size();
+    } catch (IOException ex) {
+      	modified = path.lastModified();
+		size = path.length();
+    }
+		return new FileSnapshot(read, modified, size);
 	}
 
 	/**
@@ -126,7 +153,7 @@ public class FileSnapshot {
 	 */
 	public static FileSnapshot save(long modified) {
 		final long read = System.currentTimeMillis();
-		return new FileSnapshot(read, modified);
+		return new FileSnapshot(read, modified, -1);
 	}
 
 	/** Last observed modification time of the path. */
@@ -138,10 +165,16 @@ public class FileSnapshot {
 	/** True once {@link #lastRead} is far later than {@link #lastModified}. */
 	private boolean cannotBeRacilyClean;
 
-	private FileSnapshot(long read, long modified) {
+	/** Underlying file-system size in bytes.
+	 *
+	 * When set to {@link #UNKNOWN_SIZE} the size is not considered for modification checks. */
+	private final long size;
+
+	private FileSnapshot(long read, long modified, long size) {
 		this.lastRead = read;
 		this.lastModified = modified;
 		this.cannotBeRacilyClean = notRacyClean(read);
+		this.size = size;
 	}
 
 	/**
@@ -149,6 +182,13 @@ public class FileSnapshot {
 	 */
 	public long lastModified() {
 		return lastModified;
+	}
+
+	/**
+	 * @return file size in bytes of last snapshot update
+	 */
+	public long size() {
+		return size;
 	}
 
 	/**
@@ -160,12 +200,16 @@ public class FileSnapshot {
 	 */
 	public boolean isModified(File path) {
 		long currLastModified;
+		long currSize;
 		try {
-			currLastModified = FS.DETECTED.lastModified(path);
+			BasicFileAttributes fileAttributes = FS.DETECTED.fileAttributes(path);
+			currLastModified = fileAttributes.lastModifiedTime().toMillis();
+			currSize = fileAttributes.size();
 		} catch (IOException e) {
 			currLastModified = path.lastModified();
+			currSize = path.length();
 		}
-		return isModified(currLastModified);
+		return (currSize != UNKNOWN_SIZE && currSize != size) || isModified(currLastModified);
 	}
 
 	/**

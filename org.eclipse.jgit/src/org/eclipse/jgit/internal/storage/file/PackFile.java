@@ -129,7 +129,11 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 
 	int packLastModified;
 
+	private FileSnapshot fileSnapshot;
+
 	private volatile boolean invalid;
+
+	private volatile Exception invalidatingCause;
 
 	private boolean invalidBitmap;
 
@@ -162,7 +166,8 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 	 */
 	public PackFile(final File packFile, int extensions) {
 		this.packFile = packFile;
-		this.packLastModified = (int) (packFile.lastModified() >> 10);
+		this.fileSnapshot = FileSnapshot.save(packFile);
+		this.packLastModified = (int) (fileSnapshot.lastModified() >> 10);
 		this.extensions = extensions;
 
 		// Multiply by 31 here so we can more directly combine with another
@@ -175,7 +180,7 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 	private synchronized PackIndex idx() throws IOException {
 		if (loadedIdx == null) {
 			if (invalid)
-				throw new PackInvalidException(packFile);
+				throw new PackInvalidException(packFile, invalidatingCause);
 
 			try {
 				final PackIndex idx = PackIndex.open(extFile(INDEX));
@@ -193,6 +198,7 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 				throw e;
 			} catch (IOException e) {
 				invalid = true;
+				invalidatingCause = e;
 				throw e;
 			}
 		}
@@ -333,6 +339,16 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 	 */
 	ObjectId findObjectForOffset(final long offset) throws IOException {
 		return getReverseIdx().findObject(offset);
+	}
+
+	/**
+	 * Return the @{@link FileSnapshot} associated to the underlying packfile
+	 * that has been used when the object was created.
+	 *
+	 * @return the packfile @{@link FileSnapshot} that the object is loaded from.
+	 */
+	FileSnapshot getFileSnapshot() {
+		return fileSnapshot;
 	}
 
 	private final byte[] decompress(final long position, final int sz,
@@ -630,9 +646,10 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 	}
 
 	private void doOpen() throws IOException {
+		if (invalid) {
+			throw new PackInvalidException(packFile, invalidatingCause);
+		}
 		try {
-			if (invalid)
-				throw new PackInvalidException(packFile);
 			synchronized (readLock) {
 				fd = new RandomAccessFile(packFile, "r"); //$NON-NLS-1$
 				length = fd.length();
@@ -640,13 +657,13 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 			}
 		} catch (InterruptedIOException e) {
 			// don't invalidate the pack, we are interrupted from another thread
-			openFail(false);
+			openFail(false, e);
 			throw e;
 		} catch (FileNotFoundException fn) {
 			// don't invalidate the pack if opening an existing file failed
 			// since it may be related to a temporary lack of resources (e.g.
 			// max open files)
-			openFail(!packFile.exists());
+			openFail(!packFile.exists(), fn);
 			throw fn;
 		} catch (EOFException | AccessDeniedException | NoSuchFileException
 				| CorruptObjectException | NoPackSignatureException
@@ -654,20 +671,21 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 				| UnsupportedPackIndexVersionException
 				| UnsupportedPackVersionException pe) {
 			// exceptions signaling permanent problems with a pack
-			openFail(true);
+			openFail(true, pe);
 			throw pe;
 		} catch (IOException | RuntimeException ge) {
 			// generic exceptions could be transient so we should not mark the
 			// pack invalid to avoid false MissingObjectExceptions
-			openFail(false);
+			openFail(false, ge);
 			throw ge;
 		}
 	}
 
-	private void openFail(boolean invalidate) {
+	private void openFail(boolean invalidate, Exception cause) {
 		activeWindows = 0;
 		activeCopyRawData = 0;
 		invalid = invalidate;
+		invalidatingCause = cause;
 		doClose();
 	}
 
@@ -688,6 +706,14 @@ public class PackFile implements Iterable<PackIndex.MutableEntry> {
 
 	ByteArrayWindow read(final long pos, int size) throws IOException {
 		synchronized (readLock) {
+			if (invalid || fd == null) {
+				// Due to concurrency between a read and another packfile invalidation thread
+				// one thread could come up to this point and then fail with NPE.
+				// Detect the situation and throw a proper exception so that can be properly
+				// managed by the main packfile search loop and the Git client won't receive
+				// any failures.
+				throw new PackInvalidException(packFile, invalidatingCause);
+			}
 			if (length < pos + size)
 				size = (int) (length - pos);
 			final byte[] buf = new byte[size];

@@ -1,0 +1,67 @@
+/********************************************************************************
+ * Copyright (c) 2014-2018 WANdisco
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0.
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ *
+ ********************************************************************************/
+
+
+This project includes:
+  Apache Ant Core under The Apache Software License, Version 2.0
+  Apache Ant Launcher under The Apache Software License, Version 2.0
+  Apache Commons Compress under The Apache Software License, Version 2.0
+  Apache Commons IO under Apache License, Version 2.0
+  Apache HttpClient under Apache License, Version 2.0
+  Apache HttpCore under Apache License, Version 2.0
+  Apache Log4j under The Apache Software License, Version 2.0
+  args4j under Apache License, Version 2.0
+  Bouncy Castle Provider under Bouncy Castle Licence
+  Commons Codec under The Apache Software License, Version 2.0
+  Commons Logging under The Apache Software License, Version 2.0
+  Data Mapper for Jackson under The Apache Software License, Version 2.0
+  Gerrit Gitms Interface under Apache License, Version 2.0
+  Gson under The Apache Software License, Version 2.0
+  Guava: Google Core Libraries for Java under The Apache Software License, Version 2.0
+  Hamcrest Core under New BSD License
+  Hamcrest library under New BSD License
+  Jackson under The Apache Software License, Version 2.0
+  Java Servlet API under CDDL + GPLv2 with classpath exception
+  JavaEWAH under Apache 2
+  Jetty :: Http Utility under Apache Software License - Version 2.0 or Eclipse Public License - Version 1.0
+  Jetty :: IO Utility under Apache Software License - Version 2.0 or Eclipse Public License - Version 1.0
+  Jetty :: Security under Apache Software License - Version 2.0 or Eclipse Public License - Version 1.0
+  Jetty :: Server Core under Apache Software License - Version 2.0 or Eclipse Public License - Version 1.0
+  Jetty :: Servlet Handling under Apache Software License - Version 2.0 or Eclipse Public License - Version 1.0
+  Jetty :: Utilities under Apache Software License - Version 2.0 or Eclipse Public License - Version 1.0
+  JGit - Ant Tasks under Eclipse Distribution License (New BSD License)
+  JGit - Ant Tasks Tests under Eclipse Distribution License (New BSD License)
+  JGit - Apache httpclient based HTTP support under Eclipse Distribution License (New BSD License)
+  JGit - Archive Formats under Eclipse Distribution License (New BSD License)
+  JGit - AWT User Interface under Eclipse Distribution License (New BSD License)
+  JGit - Command Line Interface under Eclipse Distribution License (New BSD License)
+  JGit - Command Line Interface Tests under Eclipse Distribution License (New BSD License)
+  JGit - Core under Eclipse Distribution License (New BSD License)
+  JGit - Core Tests under Eclipse Distribution License (New BSD License)
+  JGit - HTTP Server under Eclipse Distribution License (New BSD License)
+  JGit - HTTP Tests under Eclipse Distribution License (New BSD License)
+  JGit - JUnit Http Utility Classes under Eclipse Distribution License (New BSD License)
+  JGit - JUnit Utility Classes under Eclipse Distribution License (New BSD License)
+  JGit - Large File Storage under Eclipse Distribution License (New BSD License)
+  JGit - Large File Storage Server under Eclipse Distribution License (New BSD License)
+  JGit - Large File Storage Tests under Eclipse Distribution License (New BSD License)
+  JGit - LFS Server Tests under Eclipse Distribution License (New BSD License)
+  JGit - Parent under Eclipse Distribution License (New BSD License)
+  JSch under Revised BSD
+  JUnit under Eclipse Public License 1.0
+  osgi.core under Apache License, Version 2.0
+  SLF4J API Module under MIT License
+  SLF4J LOG4J-12 Binding under MIT License
+  XZ for Java under Public Domain
+
+
+This project also includes code under copywrite of the following entities:
+http://code.google.com/p/maven-license-plugin/
