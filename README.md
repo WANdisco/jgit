@@ -1,5 +1,12 @@
-# Java Git
+# Replicated JGit Support
+Note this code has been taken as a fork from
+https://github.com/eclipse/jgit.  The fork then has WANdisco replication
+support added to it, and produced to support replicated products such as `Gerrit Multisite`.
 
+For more information see: https://wandisco.com/scm
+
+Java Git
+========
 An implementation of the Git version control system in pure Java.
 
 This project is licensed under the __EDL__ (Eclipse Distribution
@@ -103,8 +110,19 @@ __org.eclipse.jgit.junit.ssh__: Helpers for unit testing
   is installed. Modifying PATH is the recommended option if C Git is
   installed.
 
-- We try to use the same notation of `$HOME` as C Git does. On Windows
-  this is often not the same value as the `user.home` system property.
+- We try to use the same notation of $HOME as C Git does. On Windows
+  this is often not the same value as the user.home system property.
+
+Replicated JGit Configuration Defaults
+----------------
+This fork of JGit has altered some of the default internal configuration values.
+Default configurations have been updated to the following:
+* gc.auto = 0
+* gc.autopacklimit = 0
+* gc.autoDetach = false
+* receive.autogc = false
+
+The WindowCacheConfig has also been enhanced to read global git configuration by default.
 
 ## Features
 

@@ -8,11 +8,29 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
+/********************************************************************************
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.lib;
 
-import static org.eclipse.jgit.transport.ReceiveCommand.Result.NOT_ATTEMPTED;
-import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_OTHER_REASON;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.eclipse.jgit.annotations.Nullable;
+import org.eclipse.jgit.errors.MissingObjectException;
+import org.eclipse.jgit.internal.JGitText;
+import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.transport.PushCertificate;
+import org.eclipse.jgit.transport.ReceiveCommand;
+import org.eclipse.jgit.util.time.ProposedTimestamp;
 
 import java.io.IOException;
 import java.text.MessageFormat;
@@ -25,13 +43,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
-import org.eclipse.jgit.annotations.Nullable;
-import org.eclipse.jgit.errors.MissingObjectException;
-import org.eclipse.jgit.internal.JGitText;
-import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.transport.PushCertificate;
-import org.eclipse.jgit.transport.ReceiveCommand;
-import org.eclipse.jgit.util.time.ProposedTimestamp;
+import static org.eclipse.jgit.transport.ReceiveCommand.Result.NOT_ATTEMPTED;
+import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_OTHER_REASON;
 
 /**
  * Batch of reference updates to be applied to a repository.
@@ -69,6 +82,9 @@ public class BatchRefUpdate {
 
 	/** Should the result value be appended to {@link #refLogMessage}. */
 	private boolean refLogIncludeResult;
+
+	/** Should the update be replicated. */
+	protected boolean replicated = true;
 
 	/**
 	 * Should reflogs be written even if the configured default for this ref is
@@ -151,6 +167,26 @@ public class BatchRefUpdate {
 	}
 
 	/**
+	 * Get if this command is to be replicated... By default it is - but this can be disabled for non-replicated
+	 * commands... Say gitms performing an update.
+	 * @return boolean
+	 */
+	public boolean isReplicated() {
+		return replicated;
+	}
+
+	/**
+	 * Set if the BatchRefUpdate operations should be replicated or not.
+	 *
+	 * @param replicated
+	 * @return {@code this}
+	 */
+	public BatchRefUpdate isReplicated(final boolean replicated) {
+		this.replicated = replicated;
+		return this;
+	}
+
+	/**
 	 * Get the message to include in the reflog.
 	 *
 	 * @return message the caller wants to include in the reflog; null if the
@@ -167,7 +203,7 @@ public class BatchRefUpdate {
 	 * <p>
 	 * Describes the default for commands in this batch that do not override it
 	 * with
-	 * {@link org.eclipse.jgit.transport.ReceiveCommand#setRefLogMessage(String, boolean)}.
+	 * {@link ReceiveCommand#setRefLogMessage(String, boolean)}.
 	 *
 	 * @return true if the message should include the result.
 	 */
@@ -186,7 +222,7 @@ public class BatchRefUpdate {
 	 * <p>
 	 * Describes the default for commands in this batch that do not override it
 	 * with
-	 * {@link org.eclipse.jgit.transport.ReceiveCommand#setRefLogMessage(String, boolean)}.
+	 * {@link ReceiveCommand#setRefLogMessage(String, boolean)}.
 	 *
 	 * @param msg
 	 *            the message to describe this change. If null and appendStatus
@@ -263,7 +299,7 @@ public class BatchRefUpdate {
 	 * <p>
 	 * This method only works if the underlying ref database supports atomic
 	 * transactions, i.e.
-	 * {@link org.eclipse.jgit.lib.RefDatabase#performsAtomicTransactions()}
+	 * {@link RefDatabase#performsAtomicTransactions()}
 	 * returns true. Calling this method with true if the underlying ref
 	 * database does not support atomic transactions will cause all commands to
 	 * fail with {@code
@@ -402,7 +438,7 @@ public class BatchRefUpdate {
 	 * Request the batch to wait for the affected timestamps to resolve.
 	 *
 	 * @param ts
-	 *            a {@link org.eclipse.jgit.util.time.ProposedTimestamp} object.
+	 *            a {@link ProposedTimestamp} object.
 	 * @return {@code this}.
 	 * @since 4.6
 	 */
@@ -422,7 +458,7 @@ public class BatchRefUpdate {
 	 * <p>
 	 * Implementations must respect the atomicity requirements of the underlying
 	 * database as described in {@link #setAtomic(boolean)} and
-	 * {@link org.eclipse.jgit.lib.RefDatabase#performsAtomicTransactions()}.
+	 * {@link RefDatabase#performsAtomicTransactions()}.
 	 *
 	 * @param walk
 	 *            a RevWalk to parse tags in case the storage system wants to
@@ -431,7 +467,7 @@ public class BatchRefUpdate {
 	 *            progress monitor to receive update status on.
 	 * @param options
 	 *            a list of option strings; set null to execute without
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 *             the database is unable to accept the update. Individual
 	 *             command status must be tested to determine if there is a
 	 *             partial failure, or a total failure.
@@ -439,6 +475,9 @@ public class BatchRefUpdate {
 	 */
 	public void execute(RevWalk walk, ProgressMonitor monitor,
 			List<String> options) throws IOException {
+
+		// get the username for this thread context before we do anything else.
+		String user = RefUpdate.getUsernameAndClear();
 
 		if (atomic && !refdb.performsAtomicTransactions()) {
 			for (ReceiveCommand c : commands) {
@@ -460,9 +499,17 @@ public class BatchRefUpdate {
 		monitor.beginTask(JGitText.get().updatingReferences, commands.size());
 		List<ReceiveCommand> commands2 = new ArrayList<>(
 				commands.size());
+
 		// First delete refs. This may free the name space for some of the
 		// updates.
 		for (ReceiveCommand cmd : commands) {
+			// regardless of the command being issued, if we have been given a username, we better make it
+			// available for each sub command being issued, otherwise it would be lost after the first command as
+			// its cleared...
+			if ( user != null ){
+				RefUpdate.setUsername(user);
+			}
+
 			try {
 				if (cmd.getResult() == NOT_ATTEMPTED) {
 					if (isMissing(walk, cmd.getOldId())
@@ -472,29 +519,43 @@ public class BatchRefUpdate {
 					}
 					cmd.updateType(walk);
 					switch (cmd.getType()) {
-					case CREATE:
-						commands2.add(cmd);
-						break;
-					case UPDATE:
-					case UPDATE_NONFASTFORWARD:
-						commands2.add(cmd);
-						break;
-					case DELETE:
+					    case CREATE:
+						case UPDATE:
+						case UPDATE_NONFASTFORWARD:
+							commands2.add(cmd);
+							break;
+						case DELETE:
 						RefUpdate rud = newUpdate(cmd);
 						monitor.update(1);
-						cmd.setResult(rud.delete(walk));
+						if (replicated) {
+							cmd.setResult(rud.delete(walk));
+						} else {
+							cmd.setResult(rud.unreplicatedDelete(walk));
+						}
 					}
 				}
 			} catch (IOException err) {
-				cmd.setResult(
-						REJECTED_OTHER_REASON,
-						MessageFormat.format(JGitText.get().lockError,
-								err.getMessage()));
+				final Throwable rootCause = ExceptionUtils.getRootCause(err);
+				cmd.setResult(REJECTED_OTHER_REASON,
+							  MessageFormat.format(JGitText.get().lockError, rootCause.getMessage()));
 			}
 		}
+
+		// TODO: trevorg look at batch ref update, it looks like we are splitting apart the operations here
+		// and firing them out one at a time... When this is meant as an atomic all or nothing operation we could easily
+		// have got 2 of 3 done.... and not roll back.... This should be a new proposal...!!  See packedbatchrefupdate.
+		// So its critical to work out if we have more than 1 command here,
+		// also note phase 1 delete could have added to this.. ARG!!
 		if (!commands2.isEmpty()) {
 			// Perform updates that may require more room in the name space
 			for (ReceiveCommand cmd : commands2) {
+				// regardless of the command being issued, if we have been given a username, we better make it
+				// available for each sub command being issued, otherwise it would be lost after the first command as
+				// its cleared...
+				if ( user != null ){
+					RefUpdate.setUsername(user);
+				}
+
 				try {
 					if (cmd.getResult() == NOT_ATTEMPTED) {
 						cmd.updateType(walk);
@@ -506,13 +567,28 @@ public class BatchRefUpdate {
 							case UPDATE_NONFASTFORWARD:
 							case CREATE:
 								RefUpdate ru = newUpdate(cmd);
-								cmd.setResult(ru.update(walk));
+								if(ru.getRefLogMessage() == null) {
+									// CGit uses push for update, update_nonfastforward and create operations.
+									ru.setRefLogMessage("push", true);
+								}
+								// refLogIdent may have been set at this point by passing the ReceiveCommand to
+								// newUpdate which sets the refLogIdent. If we haven't then set it.
+								if(ru.getRefLogIdent() == null){
+									ru.setRefLogIdent(getRefLogIdent());
+								}
+
+								if (replicated) {
+									cmd.setResult(ru.update(walk));
+								} else {
+									cmd.setResult(ru.unreplicatedUpdate(walk));
+								}
 								break;
 						}
 					}
 				} catch (IOException err) {
-					cmd.setResult(REJECTED_OTHER_REASON, MessageFormat.format(
-							JGitText.get().lockError, err.getMessage()));
+					final Throwable rootCause = ExceptionUtils.getRootCause(err);
+					cmd.setResult(REJECTED_OTHER_REASON,
+								  MessageFormat.format(JGitText.get().lockError, rootCause.getMessage()));
 				} finally {
 					monitor.update(1);
 				}
@@ -579,7 +655,7 @@ public class BatchRefUpdate {
 	 *            store them pre-peeled, a common performance optimization.
 	 * @param monitor
 	 *            progress monitor to receive update status on.
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 *             the database is unable to accept the update. Individual
 	 *             command status must be tested to determine if there is a
 	 *             partial failure, or a total failure.
@@ -628,7 +704,7 @@ public class BatchRefUpdate {
 	 * @param cmd
 	 *            specific command the update should be created to copy.
 	 * @return a single reference update command.
-	 * @throws java.io.IOException
+	 * @throws IOException
 	 *             the reference database cannot make a new update object for
 	 *             the given reference.
 	 */

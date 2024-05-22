@@ -18,7 +18,7 @@
   <groupId>org.eclipse.jgit</groupId>
   <artifactId>org.eclipse.jgit-parent</artifactId>
   <packaging>pom</packaging>
-  <version>6.6.0.202305301015-r</version>
+  <version>6.6.0-WDv1</version>
 
   <name>JGit - Parent</name>
   <url>${jgit-url}</url>
@@ -167,7 +167,11 @@
     <httpclient-version>4.5.14</httpclient-version>
     <httpcore-version>4.4.16</httpcore-version>
     <slf4j-version>1.7.36</slf4j-version>
+    <log4j-version>2.17.1</log4j-version>
+    <!-- Used by WANdisco DependencyManagement module -->
+    <gerrit-gitms-shared-version>3.0.0.1</gerrit-gitms-shared-version>
     <maven-javadoc-plugin-version>3.5.0</maven-javadoc-plugin-version>
+    <tycho-extras-version>1.7.0</tycho-extras-version>
     <gson-version>2.10.1</gson-version>
     <bouncycastle-version>1.73</bouncycastle-version>
     <spotbugs-maven-plugin-version>4.7.3.4</spotbugs-maven-plugin-version>
@@ -181,17 +185,29 @@
     <assertj-version>3.24.2</assertj-version>
     <jna-version>5.13.0</jna-version>
 
+    <!-- Dependency Management-->
+    <skipDependencyManagement>true</skipDependencyManagement>
+    <!-- Release Notes Enforcement -->
+    <skipReleaseNotesEnforcement>true</skipReleaseNotesEnforcement>
+    <!-- Security checking -->
+    <skipSecurityCheck>true</skipSecurityCheck>
+
     <!-- Properties to enable jacoco code coverage analysis -->
     <sonar.core.codeCoveragePlugin>jacoco</sonar.core.codeCoveragePlugin>
     <sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
     <sonar.jacoco.reportPath>${project.build.directory}/jacoco.exec</sonar.jacoco.reportPath>
 
     <!-- license check -->
-    <dash.fail>true</dash.fail>
+    <dash.fail>false</dash.fail>
     <dash.projectId>technology.jgit</dash.projectId>
   </properties>
 
   <repositories>
+    <repository>
+      <id>wd_central</id>
+      <name>WANDisco - central repository</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases/</url>
+    </repository>
     <repository>
       <id>jgit-repository</id>
       <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
@@ -199,6 +215,11 @@
   </repositories>
 
   <pluginRepositories>
+    <pluginRepository>
+      <id>wd_central_plugins</id>
+      <name>WANdisco central plugins</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
+    </pluginRepository>
     <pluginRepository>
       <id>repo.eclipse.org.cbi-releases</id>
       <url>https://repo.eclipse.org/content/repositories/cbi-releases/</url>
@@ -395,10 +416,33 @@
           <artifactId>license-tool-plugin</artifactId>
           <version>1.0.2</version>
         </plugin>
+        <plugin>
+          <groupId>org.owasp</groupId>
+          <artifactId>dependency-check-maven</artifactId>
+          <version>6.1.1</version>
+        </plugin>
       </plugins>
     </pluginManagement>
 
     <plugins>
+      <!-- OWASP Dependency Check for security vulnerabilities. -->
+      <!-- can be run separately by cmd 'mvn dependency-check:check' -->
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <configuration>
+          <skip>${skipSecurityCheck}</skip>
+          <skipSystemScope>true</skipSystemScope>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
@@ -527,10 +571,10 @@
               <goal>check</goal>
             </goals>
             <configuration>
-            <haltOnFailure>false</haltOnFailure>
-            <rules>
-              <rule>
-                <element>BUNDLE</element>
+              <haltOnFailure>false</haltOnFailure>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
                   <limits>
                     <limit>
                       <counter>INSTRUCTION</counter>
@@ -726,11 +770,11 @@
         <version>${osgi-core-version}</version>
       </dependency>
 
-      <dependency>
-        <groupId>org.apache.httpcomponents</groupId>
-        <artifactId>httpclient</artifactId>
-        <version>${httpclient-version}</version>
-      </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpclient</artifactId>
+                <version>${httpclient-version}</version>
+            </dependency>
 
       <dependency>
         <groupId>org.apache.httpcomponents</groupId>
@@ -797,6 +841,17 @@
         <artifactId>jna-platform</artifactId>
         <version>${jna-version}</version>
       </dependency>
+
+      <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+      really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+      scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
+      NB Changes to this version, should also be replicated in the WORKSPACE file in the root directory for bazel builds.
+       Update  _GERRIT_GITMS_VERSION = "1.1.0.1-TC11-SNAPSHOT"-->
+      <dependency>
+        <groupId>com.wandisco</groupId>
+        <artifactId>gerrit-gitms-shared</artifactId>
+        <version>${gerrit-gitms-shared-version}</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -820,6 +875,15 @@
   </distributionManagement>
 
   <profiles>
+    <profile>
+      <id>fast-assembly</id>
+      <properties>
+        <maven.test.skip>true</maven.test.skip>
+        <skipSecurityCheck>true</skipSecurityCheck>
+        <skipDependencyManagement>true</skipDependencyManagement>
+        <skipReleaseNotesEnforcement>true</skipReleaseNotesEnforcement>
+      </properties>
+    </profile>
     <profile>
       <id>javac</id>
       <build>
@@ -941,6 +1005,8 @@
   </profiles>
 
   <modules>
+    <module>dependency-management</module>
+    <module>release-notes</module>
     <module>org.eclipse.jgit</module>
     <module>org.eclipse.jgit.ant</module>
     <module>org.eclipse.jgit.archive</module>
@@ -970,5 +1036,4 @@
     <module>org.eclipse.jgit.coverage</module>
     <module>org.eclipse.jgit.benchmarks</module>
   </modules>
-
 </project>

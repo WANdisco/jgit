@@ -45,6 +45,7 @@ import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.util.FileUtils;
+import org.eclipse.jgit.util.GitConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,6 +71,17 @@ class PackDirectory {
 	private final AtomicReference<PackList> packList;
 
 	private final boolean trustFolderStat;
+
+	private static final int PACKED_OBJECT_RESCAN_COUNT_DEFAULT = -1;
+
+	private static final int PACKED_OBJECT_RESCAN_SIMPLIFIED = 0;
+
+	/** Used to rescan packed objects if they failed to be read in first scan
+	 * a value of -1 indicates that no rescan should occur and just use existing logic.
+	 */
+	private static int PACKED_OBJECT_RESCAN_COUNT = PACKED_OBJECT_RESCAN_COUNT_DEFAULT;
+
+	private static boolean SCAN_COUNT_INITIALIZED = false;
 
 	/**
 	 * Initialize a reference to an on-disk 'pack' directory.
@@ -213,6 +225,14 @@ class PackDirectory {
 
 	ObjectLoader open(WindowCursor curs, AnyObjectId objectId)
 			throws PackMismatchException {
+		int rescanCount = SCAN_COUNT_INITIALIZED == true ? PACKED_OBJECT_RESCAN_COUNT : getRescanCount();
+
+		if (rescanCount > 0) {
+			return openPackedObjectFinite(curs, objectId, PACKED_OBJECT_RESCAN_COUNT);
+		} else if (rescanCount == PACKED_OBJECT_RESCAN_SIMPLIFIED) {
+			return openPackedObjectSimplified(curs, objectId);
+		}
+
 		PackList pList;
 		do {
 			int retries = 0;
@@ -237,6 +257,99 @@ class PackDirectory {
 				break SEARCH;
 			}
 		} while (searchPacksAgain(pList));
+		return null;
+	}
+
+	private synchronized int getRescanCount() {
+
+		if (SCAN_COUNT_INITIALIZED) {
+			return PACKED_OBJECT_RESCAN_COUNT;
+		}
+		try {
+			final String result = GitConfiguration.getGitConfigProperty("wdjgit", null, "rescanCount");
+
+			if (result != null) {
+				PACKED_OBJECT_RESCAN_COUNT = Integer.parseInt(result);
+			}
+		} catch (IOException | NumberFormatException e) {
+			LOG.warn("Failed to read pack object rescan count from config.  Assuming default behaviour.", e);
+		} finally {
+			SCAN_COUNT_INITIALIZED = true;
+		}
+		return PACKED_OBJECT_RESCAN_COUNT;
+	}
+
+	private ObjectLoader openPackedObjectFinite(WindowCursor curs, AnyObjectId objectId, int rescanCount) {
+		ObjectLoader ldr = null;
+		int count = 0;
+		do {
+			ldr = openPackedObjectWithRetry(curs, objectId);
+			if (ldr != null) {
+				return ldr;
+			}
+			count++;
+			// sometimes a pack can be locked by another thread so we need to check if
+			// we need to search packs again.  The count allows us to exit out of this loop
+			// at some point if searchPacksAgain always returns true.  i.e. the lock does
+			// not get released after a sensible period of time.
+		} while ((count < rescanCount) && searchPacksAgain(packList.get()));
+
+		return null;
+	}
+
+	private ObjectLoader openPackedObjectSimplified(WindowCursor curs, AnyObjectId objectId) {
+		ObjectLoader ldr = null;
+		do {
+			ldr = openPackedObjectWithRetry(curs, objectId);
+			if (ldr != null) {
+				return ldr;
+			}
+		} while (searchPacksAgain(packList.get()));
+
+		return null;
+	}
+
+	ObjectLoader openPackedObjectWithRetry(WindowCursor curs, AnyObjectId objectId) {
+		PackList pList = packList.get();
+		List<String> packNamesToRetry = new ArrayList<>();
+		for (Pack p : pList.packs) {
+			try {
+				ObjectLoader ldr = p.get(curs, objectId);
+				p.resetTransientErrorCount();
+				if (ldr != null) {
+					return ldr;
+				}
+			} catch (PackMismatchException e) {
+				// Pack was modified; refresh the entire pack list.
+				packNamesToRetry.add(p.getPackName());
+			} catch (IOException e) {
+				handlePackError(e, p);
+				packNamesToRetry.add(p.getPackName());
+			}
+		}
+
+		for (String packName : packNamesToRetry) {
+			// refresh the packs
+			pList = packList.get();
+			for (Pack pf : pList.packs) {
+				// only load the object if it is one of the ones we are looking for
+				if (pf.getPackName().equals(packName)) {
+					try {
+						ObjectLoader ldr = pf.get(curs, objectId);
+						pf.resetTransientErrorCount();
+						if (ldr != null) {
+							return ldr;
+						}
+					} catch (PackMismatchException e) {
+						// NOTHING TO DO
+
+					} catch (IOException ex) {
+						handlePackError(ex, pf);
+					}
+				}
+			}
+		}
+
 		return null;
 	}
 
@@ -354,6 +467,11 @@ class PackDirectory {
 	 */
 	private boolean doLogExponentialBackoff(int n) {
 		return (n & (n - 1)) == 0;
+	}
+
+	boolean searchPacksAgain() {
+		// Default test using the private packList field.
+		return searchPacksAgain(packList.get());
 	}
 
 	boolean searchPacksAgain(PackList old) {

@@ -1,12 +1,16 @@
 /*
  * Copyright (C) 2009, 2022 Google Inc. and others
+ * Copyright (C) 2018, Contributors to the Eclipse Foundation
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information regarding copyright ownership.
  *
  * This program and the accompanying materials are made available under the
- * terms of the Eclipse Distribution License v. 1.0 which is available at
- * https://www.eclipse.org/org/documents/edl-v10.php.
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
  *
- * SPDX-License-Identifier: BSD-3-Clause
- */
+ * SPDX-License-Identifier: EPL-2.0
+ ********************************************************************************/
 
 package org.eclipse.jgit.internal.storage.file;
 
@@ -37,6 +41,9 @@ import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.pack.ObjectToPack;
 import org.eclipse.jgit.internal.storage.pack.PackExt;
 import org.eclipse.jgit.internal.storage.pack.PackWriter;
+import org.eclipse.jgit.lib.RepositoryCache.FileKey;
+import org.eclipse.jgit.util.FS;
+import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.lib.AbbreviatedObjectId;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.internal.storage.commitgraph.CommitGraph;
@@ -47,9 +54,7 @@ import org.eclipse.jgit.lib.ObjectDatabase;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.RepositoryCache;
-import org.eclipse.jgit.lib.RepositoryCache.FileKey;
-import org.eclipse.jgit.util.FS;
-import org.eclipse.jgit.util.FileUtils;
+
 
 /**
  * Traditional file system based {@link org.eclipse.jgit.lib.ObjectDatabase}.
@@ -70,10 +75,13 @@ import org.eclipse.jgit.util.FileUtils;
  * considered.
  */
 public class ObjectDirectory extends FileObjectDatabase {
-	/** Maximum number of candidates offered as resolutions of abbreviation. */
-	private static final int RESOLVE_ABBREV_LIMIT = 256;
 
-	private final AlternateHandle handle = new AlternateHandle(this);
+    /**
+     * Maximum number of candidates offered as resolutions of abbreviation.
+     */
+    private static final int RESOLVE_ABBREV_LIMIT = 256;
+
+    private final AlternateHandle handle = new AlternateHandle(this);
 
 	private final Config config;
 
@@ -569,7 +577,7 @@ public class ObjectDirectory extends FileObjectDatabase {
 		return loose.insert(tmp, id);
 	}
 
-	@Override
+    @Override
 	Config getConfig() {
 		return config;
 	}

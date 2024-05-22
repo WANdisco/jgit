@@ -4,6 +4,14 @@
 infer-out
 bazel-*
 
+*.iml
+**/.idea
+**/.ijwb
+*.versionsBackup
+nb-configuration\.xml
+THIRD-PARTY\.properties
+NOTICE
+
 # Do not add editor- and OS-specific files like *~ (Emacs) and .DS_Store
 # (macOS). Instead, add them to $XDG_CONFIG_HOME/git/ignore
 # (~/.config/git/ignore if $XDG_CONFIG_HOME is not set) or

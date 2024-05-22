@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Copyright (C) 2009, Google Inc.
 # and other copyright owners as documented in the project's IP log.
 #
@@ -61,12 +61,22 @@ case "$1" in
 	esac
 	;;
 
+--release=*)
+  V=$(echo "$1" | perl -pe 's/^--release=//')
+  if [ -z "$V" ]
+  then
+      echo >&2 "usage: $0 --release=0.n.0"
+      exit 1
+  fi
+  ;;
+
 --release)
-	V=$(git describe HEAD) || exit
+	version=$(git describe HEAD) || exit
+	V=${version//RELEASE_/}
 	;;
 
 *)
-	echo >&2 "usage: $0 {--snapshot=0.n.0 | --release}"
+	echo >&2 "usage: $0 {--snapshot=0.n.0 | --release=0.n.0 | --release}"
 	exit 1
 esac
 
@@ -77,7 +87,7 @@ esac
 case "$V" in
 *-SNAPSHOT)
 	POM_V=$V
-	OSGI_V="${V%%-SNAPSHOT}.qualifier"
+	OSGI_V=$V
 	;;
 *-[1-9]*-g[0-9a-f]*)
 	POM_V=$(echo "$V" | perl -pe 's/-(\d+-g.*)$/.$1/')
@@ -170,4 +180,4 @@ perl -pi~ -e '
 	' $(git ls-files | grep pom.xml)
 
 find . -name '*~' | xargs rm -f
-git diff
+echo "All pom files and manifests updated successfully"

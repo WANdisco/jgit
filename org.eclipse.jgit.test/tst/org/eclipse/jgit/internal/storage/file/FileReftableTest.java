@@ -13,7 +13,7 @@ package org.eclipse.jgit.internal.storage.file;
 import static org.eclipse.jgit.lib.RefUpdate.Result.FAST_FORWARD;
 import static org.eclipse.jgit.lib.RefUpdate.Result.FORCED;
 import static org.eclipse.jgit.lib.RefUpdate.Result.IO_FAILURE;
-import static org.eclipse.jgit.lib.RefUpdate.Result.LOCK_FAILURE;
+import static org.eclipse.jgit.lib.RefUpdate.Result.NO_CHANGE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -243,7 +243,9 @@ public class FileReftableTest extends SampleDataRepositoryTestCase {
 		u2.setForceUpdate(true);
 
 		assertEquals(FORCED, u1.update());
-		assertEquals(LOCK_FAILURE, u2.update());
+
+		// WD: We return no change for repos already in the final state. See: RefUpdate.checkIsInFinalStateAlready
+		assertEquals(NO_CHANGE, u2.update());
 	}
 
 	@Test

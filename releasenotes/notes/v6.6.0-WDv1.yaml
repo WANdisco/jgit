@@ -1,0 +1,3 @@
+---
+features:
+- "JGit v6.6.0 includes additional fixes to support GerritMS 3.7.0 which is based on Gerrit 3.7.6+."

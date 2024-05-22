@@ -17,7 +17,7 @@ import static org.eclipse.jgit.junit.Assert.assertEquals;
 import static org.eclipse.jgit.lib.Constants.LOCK_SUFFIX;
 import static org.eclipse.jgit.lib.RefUpdate.Result.FORCED;
 import static org.eclipse.jgit.lib.RefUpdate.Result.IO_FAILURE;
-import static org.eclipse.jgit.lib.RefUpdate.Result.LOCK_FAILURE;
+import static org.eclipse.jgit.lib.RefUpdate.Result.NO_CHANGE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -578,12 +578,31 @@ public class RefUpdateTest extends SampleDataRepositoryTestCase {
 		ObjectId pid = db.resolve("refs/heads/master");
 		RefUpdate updateRef = db.updateRef("refs/heads/master");
 		updateRef.setNewObjectId(pid);
+		// note old value can be tested but not if we are already in NEW state, that is invalid as we return
+		// NO_CHANGE now to support idempotent operations.
+		updateRef.setExpectedOldObjectId(db.resolve("refs/heads/master^"));
+		Result update = updateRef.update();
+		assertEquals(Result.NO_CHANGE, update);
+		assertEquals(pid, db.resolve("refs/heads/master"));
+	}
+	/**
+	 * Try modify a ref, but get wrong expected old value to get lock failure, but make sure
+	 * you aren't in the new state already - or it will return no_change.
+	 *
+	 * @throws IOException
+	 */
+	@Test
+	public void testUpdateRefLockFailureWrongOldValueAndNewValue() throws IOException {
+		ObjectId pid = db.resolve("refs/heads/c^");
+		ObjectId headpid = db.resolve("refs/heads/master");
+		RefUpdate updateRef = db.updateRef("refs/heads/master");
+		updateRef.setNewObjectId(pid);
 		updateRef.setExpectedOldObjectId(db.resolve("refs/heads/master^"));
 		Result update = updateRef.update();
 		assertEquals(Result.LOCK_FAILURE, update);
-		assertEquals(pid, db.resolve("refs/heads/master"));
+		// make sure we didn't change head...
+		assertEquals(headpid, db.resolve("refs/heads/master"));
 	}
-
 	/**
 	 * Try modify a ref forward, fast forward, checking old value first
 	 *
@@ -900,7 +919,9 @@ public class RefUpdateTest extends SampleDataRepositoryTestCase {
 		u2.setForceUpdate(true);
 
 		assertEquals(FORCED, u1.update());
-		assertEquals(LOCK_FAILURE, u2.update());
+
+		// WD: We return no change for repos already in the final state. See: RefUpdate.checkIsInFinalStateAlready
+		assertEquals(NO_CHANGE, u2.update());
 	}
 
 	@Test

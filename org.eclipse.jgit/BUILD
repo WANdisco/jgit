@@ -20,6 +20,8 @@ java_library(
     resources = RESOURCES,
     deps = [
         ":insecure_cipher_factory",
+        "//lib:commons-lang",
+        "//lib:gerrit-gitms-shared",
         "//lib:javaewah",
         "//lib:slf4j-api",
     ],
