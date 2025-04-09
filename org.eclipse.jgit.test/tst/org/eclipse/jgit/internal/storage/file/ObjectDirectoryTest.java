@@ -73,10 +73,15 @@ import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.storage.file.FileBasedConfig;
 import org.eclipse.jgit.util.FS;
 import org.junit.Assume;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 import org.mockito.Mockito;
 
 public class ObjectDirectoryTest extends RepositoryTestCase {
+
+	@Rule
+	public ExpectedException expectedEx = ExpectedException.none();
 
 	@Test
 	public void testConcurrentInsertionOfBlobsToTheSameNewFanOutDirectory()

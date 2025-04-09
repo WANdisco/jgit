@@ -20,7 +20,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>6.6.0.202305301015-r</version>
+    <version>6.6.0-WDv1.1</version>
   </parent>
 
   <artifactId>org.eclipse.jgit</artifactId>
@@ -46,6 +46,27 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
+      <dependency>
+          <groupId>org.apache.commons</groupId>
+          <artifactId>commons-lang3</artifactId>
+          <version>3.13.0</version>
+      </dependency>
+      <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+      really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+      scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
+      NB Changes to this version, should also be replicated in the WORKSPACE file in the root directory for bazel builds.
+       Update  _GERRIT_GITMS_VERSION = "1.1.0.1-TC11-SNAPSHOT"-->
+      <dependency>
+          <groupId>com.wandisco</groupId>
+          <artifactId>gerrit-gitms-shared</artifactId>
+          <scope>provided</scope>
+          <exclusions>
+              <exclusion>
+                  <groupId>commons-lang</groupId>
+                  <artifactId>commons-lang</artifactId>
+              </exclusion>
+          </exclusions>
+      </dependency>
   </dependencies>
 
   <build>

@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2015, Matthias Sohn <matthias.sohn@sap.com> and others
  *
@@ -111,6 +112,12 @@ public class AtomicObjectOutputStream extends OutputStream {
 	}
 
 	private void verifyHash() {
+		// easy way to not use verify hash is touse the constructor without
+		// the id field.  If notset we can't verify its hash
+		if (id == null) {
+			return;
+		}
+
 		AnyLongObjectId contentHash = LongObjectId
 				.fromRaw(out.getMessageDigest().digest());
 		if (!contentHash.equals(id)) {

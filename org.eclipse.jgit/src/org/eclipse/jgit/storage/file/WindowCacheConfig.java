@@ -15,23 +15,64 @@ import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_DELTA_BASE_CACHE_L
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_LIMIT;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_MMAP;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_OPENFILES;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_DELAY;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_ENABLED;
+import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_PEROD;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_WINDOWSIZE;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_STREAM_FILE_TRESHOLD;
 import static org.eclipse.jgit.lib.ConfigConstants.CONFIG_KEY_PACKED_GIT_USE_STRONGREFS;
 
+import org.eclipse.jgit.errors.ConfigInvalidException;
 import org.eclipse.jgit.internal.storage.file.WindowCache;
 import org.eclipse.jgit.lib.Config;
+import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.storage.pack.PackConfig;
+import org.eclipse.jgit.util.SystemReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Configuration parameters for JVM-wide buffer cache used by JGit.
  */
 public class WindowCacheConfig {
+
+	private final static Logger LOG = LoggerFactory
+			.getLogger(WindowCacheConfig.class);
+
 	/** 1024 (number of bytes in one kibibyte/kilobyte) */
 	public static final int KB = 1024;
 
 	/** 1024 {@link #KB} (number of bytes in one mebibyte/megabyte) */
 	public static final int MB = 1024 * KB;
+
+	private static final long DEFAULT_CACHE_CLEAN_DELAY = TimeUnit.HOURS.toMillis(1L);
+
+	private static final long DEFAULT_CACHE_CLEAN_PERIOD = TimeUnit.HOURS.toMillis(24L);
+
+	private static final boolean DEFAULT_CACHE_CLEAN_ENABLED = true;
+
+	private static final int DEFAULT_PACKED_GIT_OPEN_FILES = 128;
+
+	private static final long DEFAULT_PACKED_GIT_LIMIT = 10 * MB;
+
+	private static final boolean DEFAULT_USE_STRONG_REFS = false;
+
+	private static final int DEFAULT_PACKED_GIT_WINDOW_SIZE = 8 * KB;
+
+	private static final boolean DEFAULT_PACKED_GIT_MMAP = false;
+
+	private static final int DEFAULT_DELTA_BASE_CACHE_LIMIT = 10 * MB;
+
+	private static final int DEFAULT_STREAM_FILE_THRESHOLD = PackConfig.DEFAULT_BIG_FILE_THRESHOLD;
+
+	private long packedGitOpenFilesCacheCleanDelay;
+
+	private long packedGitOpenFilesCacheCleanPeriod;
+
+	private boolean packedGitOpenFilesCacheCleanEnabled;
 
 	private int packedGitOpenFiles;
 
@@ -53,14 +94,79 @@ public class WindowCacheConfig {
 	 * Create a default configuration.
 	 */
 	public WindowCacheConfig() {
-		packedGitOpenFiles = 128;
-		packedGitLimit = 10 * MB;
-		useStrongRefs = false;
-		packedGitWindowSize = 8 * KB;
-		packedGitMMAP = false;
-		deltaBaseCacheLimit = 10 * MB;
-		streamFileThreshold = PackConfig.DEFAULT_BIG_FILE_THRESHOLD;
-		exposeStats = true;
+		StoredConfig config;
+		try {
+			config = SystemReader.getInstance().getUserConfig();
+			fromConfig(config);
+		} catch (ConfigInvalidException | IOException e) {
+			LOG.error("Something went wrong whilst loading system config. Using defaults instead", e);
+
+			packedGitOpenFilesCacheCleanDelay = DEFAULT_CACHE_CLEAN_DELAY;
+			packedGitOpenFilesCacheCleanPeriod = DEFAULT_CACHE_CLEAN_PERIOD;
+			packedGitOpenFilesCacheCleanEnabled = DEFAULT_CACHE_CLEAN_ENABLED;
+			packedGitOpenFiles = DEFAULT_PACKED_GIT_OPEN_FILES;
+			packedGitLimit = DEFAULT_PACKED_GIT_LIMIT;
+			useStrongRefs = DEFAULT_USE_STRONG_REFS;
+			packedGitWindowSize = DEFAULT_PACKED_GIT_WINDOW_SIZE;
+			packedGitMMAP = DEFAULT_PACKED_GIT_MMAP;
+			deltaBaseCacheLimit = DEFAULT_DELTA_BASE_CACHE_LIMIT;
+			streamFileThreshold = DEFAULT_STREAM_FILE_THRESHOLD;
+			exposeStats = true;
+		}
+	}
+
+	/**
+	 * Get delay millis for {@link WindowCache} cleaner TimerTask.
+	 *
+	 * @return delay millis <b>Default is 1 second</b>.
+	 */
+	public long getPackedGitOpenFilesCacheCleanDelay() {
+		return packedGitOpenFilesCacheCleanDelay;
+	}
+
+	/**
+	 * Get period between runs of {@link WindowCache} cleaner TimerTask.
+	 *
+	 * @return period millis <b>Default is 1 day</b>.
+	 */
+	public long getPackedGitOpenFilesCacheCleanPeriod() {
+		return packedGitOpenFilesCacheCleanPeriod;
+	}
+
+	/**
+	 * Is {@link WindowCache} cleaner TimerTask enabled.
+	 *
+	 * @return True if {@link WindowCache} cleaner TimerTask is enabled.
+	 */
+	public boolean isPackedGitOpenFilesCacheCleanEnabled() {
+		return packedGitOpenFilesCacheCleanEnabled;
+	}
+
+	/**
+	 * Set delay millis for {@link WindowCache} cleaner TimerTask.
+	 *
+	 * @param packedGitOpenFilesCacheCleanDelay delay millis
+	 */
+	public void setPackedGitOpenFilesCacheCleanDelay(long packedGitOpenFilesCacheCleanDelay) {
+		this.packedGitOpenFilesCacheCleanDelay = packedGitOpenFilesCacheCleanDelay;
+	}
+
+	/**
+	 * Set period between runs of {@link WindowCache} cleaner TimerTask.
+	 *
+	 * @param packedGitOpenFilesCacheCleanPeriod period millis
+	 */
+	public void setPackedGitOpenFilesCacheCleanPeriod(long packedGitOpenFilesCacheCleanPeriod) {
+		this.packedGitOpenFilesCacheCleanPeriod = packedGitOpenFilesCacheCleanPeriod;
+	}
+
+	/**
+	 * Set {@link WindowCache} cleaner TimerTask enabled.
+	 *
+	 * @param packedGitOpenFilesCacheCleanEnabled enabled
+	 */
+	public void setPackedGitOpenFilesCacheCleanEnabled(boolean packedGitOpenFilesCacheCleanEnabled) {
+		this.packedGitOpenFilesCacheCleanEnabled = packedGitOpenFilesCacheCleanEnabled;
 	}
 
 	/**
@@ -269,21 +375,27 @@ public class WindowCacheConfig {
 	public WindowCacheConfig fromConfig(Config rc) {
 		setPackedGitUseStrongRefs(rc.getBoolean(CONFIG_CORE_SECTION,
 				CONFIG_KEY_PACKED_GIT_USE_STRONGREFS,
-				isPackedGitUseStrongRefs()));
+				DEFAULT_USE_STRONG_REFS));
+		setPackedGitOpenFilesCacheCleanEnabled(rc.getBoolean(CONFIG_CORE_SECTION, null,
+		        CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_ENABLED, DEFAULT_CACHE_CLEAN_ENABLED));
+		setPackedGitOpenFilesCacheCleanDelay(rc.getLong(CONFIG_CORE_SECTION, null,
+		        CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_DELAY, DEFAULT_CACHE_CLEAN_DELAY));
+		setPackedGitOpenFilesCacheCleanPeriod(rc.getLong(CONFIG_CORE_SECTION, null,
+		        CONFIG_KEY_PACKED_GIT_OPENFILES_CACHE_CLEAN_PEROD, DEFAULT_CACHE_CLEAN_PERIOD));
 		setPackedGitOpenFiles(rc.getInt(CONFIG_CORE_SECTION, null,
-				CONFIG_KEY_PACKED_GIT_OPENFILES, getPackedGitOpenFiles()));
+				CONFIG_KEY_PACKED_GIT_OPENFILES, DEFAULT_PACKED_GIT_OPEN_FILES));
 		setPackedGitLimit(rc.getLong(CONFIG_CORE_SECTION, null,
-				CONFIG_KEY_PACKED_GIT_LIMIT, getPackedGitLimit()));
+				CONFIG_KEY_PACKED_GIT_LIMIT, DEFAULT_PACKED_GIT_LIMIT));
 		setPackedGitWindowSize(rc.getInt(CONFIG_CORE_SECTION, null,
-				CONFIG_KEY_PACKED_GIT_WINDOWSIZE, getPackedGitWindowSize()));
+				CONFIG_KEY_PACKED_GIT_WINDOWSIZE, DEFAULT_PACKED_GIT_WINDOW_SIZE));
 		setPackedGitMMAP(rc.getBoolean(CONFIG_CORE_SECTION, null,
-				CONFIG_KEY_PACKED_GIT_MMAP, isPackedGitMMAP()));
+				CONFIG_KEY_PACKED_GIT_MMAP, DEFAULT_PACKED_GIT_MMAP));
 		setDeltaBaseCacheLimit(rc.getInt(CONFIG_CORE_SECTION, null,
-				CONFIG_KEY_DELTA_BASE_CACHE_LIMIT, getDeltaBaseCacheLimit()));
+				CONFIG_KEY_DELTA_BASE_CACHE_LIMIT, DEFAULT_DELTA_BASE_CACHE_LIMIT));
 
 		long maxMem = Runtime.getRuntime().maxMemory();
 		long sft = rc.getLong(CONFIG_CORE_SECTION, null,
-				CONFIG_KEY_STREAM_FILE_TRESHOLD, getStreamFileThreshold());
+				CONFIG_KEY_STREAM_FILE_TRESHOLD, DEFAULT_STREAM_FILE_THRESHOLD);
 		sft = Math.min(sft, maxMem / 4); // don't use more than 1/4 of the heap
 		sft = Math.min(sft, Integer.MAX_VALUE); // cannot exceed array length
 		setStreamFileThreshold((int) sft);

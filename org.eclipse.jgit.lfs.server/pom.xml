@@ -8,6 +8,18 @@
 
   SPDX-License-Identifier: BSD-3-Clause
 -->
+<!--
+Copyright (c) 2018 Contributors to the Eclipse Foundation
+
+  See the NOTICE file(s) distributed with this work for additional
+  information regarding copyright ownership.
+
+  This program and the accompanying materials are made available under the
+  terms of the Eclipse Public License 2.0 which is available at
+  http://www.eclipse.org/legal/epl-2.0
+
+  SPDX-License-Identifier: EPL-2.0
+-->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -17,7 +29,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>6.6.0.202305301015-r</version>
+    <version>6.6.0-WDv1.1</version>
   </parent>
 
   <artifactId>org.eclipse.jgit.lfs.server</artifactId>
@@ -60,6 +72,16 @@
     <dependency>
       <groupId>com.google.code.gson</groupId>
       <artifactId>gson</artifactId>
+    </dependency>
+
+    <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+    really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+    scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
+    -->
+    <dependency>
+      <groupId>com.wandisco</groupId>
+      <artifactId>gerrit-gitms-shared</artifactId>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 

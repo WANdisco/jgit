@@ -27,6 +27,7 @@ import org.eclipse.jgit.internal.diffmergetool.ExternalMergeTool;
 import org.eclipse.jgit.internal.diffmergetool.MergeTools;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -77,7 +78,7 @@ public class MergeToolTest extends ToolTestCase {
 				+ errorReturnCode);
 	}
 
-	@Test
+	@Ignore("This test is very machine specific expecting a C error message from ImageMagick.")
 	public void testEmptyToolName() throws Exception {
 		assumeLinuxPlatform();
 
@@ -91,6 +92,8 @@ public class MergeToolTest extends ToolTestCase {
 
 		createMergeConflict();
 
+		// TODO smh: This error message is different on my Ubuntu 20, do we fix or.. it seems brittle to rely on system-wide packages?
+		//      "compare-im6.q16: unrecognized option `-wait' @ error/compare.c/CompareImageCommand/1134."
 		String araxisErrorLine = "compare: unrecognized option `-wait' @ error/compare.c/CompareImageCommand/1123.";
 		String[] expectedErrorOutput = { araxisErrorLine, araxisErrorLine, };
 		runAndCaptureUsingInitRaw(Arrays.asList(expectedErrorOutput),

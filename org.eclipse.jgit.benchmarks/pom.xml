@@ -14,7 +14,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.eclipse.jgit</groupId>
-  <version>6.6.0.202305301015-r</version>
+  <version>6.6.0-WDv1.1</version>
   <artifactId>org.eclipse.jgit.benchmarks</artifactId>
   <packaging>jar</packaging>
 
@@ -24,9 +24,42 @@
     <java.version>11</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jmh.version>1.35</jmh.version>
+    <gerrit-gitms-shared-version>3.0.0.1</gerrit-gitms-shared-version>
     <uberjar.name>benchmarks</uberjar.name>
   </properties>
 
+  <repositories>
+    <repository>
+      <id>wd_releases</id>
+      <name>WANdisco - Nexus repository</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases/</url>
+    </repository>
+    <repository>
+      <id>jgit-repository</id>
+      <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
+    </repository>
+  </repositories>
+
+  <pluginRepositories>
+    <pluginRepository>
+      <id>wd_release_plugins</id>
+      <name>WANdisco Nexus plugins</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>repo.eclipse.org.cbi-releases</id>
+      <url>https://repo.eclipse.org/content/repositories/cbi-releases/</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>repo.eclipse.org.cbi-snapshots</id>
+      <url>https://repo.eclipse.org/content/repositories/cbi-snapshots/</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>repo.eclipse.org.dash-releases</id>
+      <url>https://repo.eclipse.org/content/repositories/dash-licenses-releases/</url>
+    </pluginRepository>
+  </pluginRepositories>
+  
   <dependencies>
     <dependency>
       <groupId>org.openjdk.jmh</groupId>
@@ -42,6 +75,11 @@
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.wandisco</groupId>
+      <artifactId>gerrit-gitms-shared</artifactId>
+      <version>${gerrit-gitms-shared-version}</version>
     </dependency>
     <dependency>
       <groupId>org.eclipse.jgit</groupId>

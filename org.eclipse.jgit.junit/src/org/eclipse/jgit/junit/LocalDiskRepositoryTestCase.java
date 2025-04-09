@@ -150,6 +150,7 @@ public abstract class LocalDiskRepositoryTestCase {
 		c.setPackedGitWindowSize(8 * WindowCacheConfig.KB);
 		c.setPackedGitMMAP(useMMAP);
 		c.setDeltaBaseCacheLimit(8 * WindowCacheConfig.KB);
+		c.setPackedGitOpenFilesCacheCleanEnabled(false);
 		c.install();
 	}
 

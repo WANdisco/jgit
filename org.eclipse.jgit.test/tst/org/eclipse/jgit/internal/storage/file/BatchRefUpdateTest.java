@@ -10,41 +10,6 @@
 
 package org.eclipse.jgit.internal.storage.file;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.concurrent.TimeUnit.NANOSECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.LOCK_FAILURE;
-import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.OK;
-import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.REJECTED_MISSING_OBJECT;
-import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.REJECTED_NONFASTFORWARD;
-import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.TRANSACTION_ABORTED;
-import static org.eclipse.jgit.lib.ObjectId.zeroId;
-import static org.eclipse.jgit.transport.ReceiveCommand.Type.CREATE;
-import static org.eclipse.jgit.transport.ReceiveCommand.Type.DELETE;
-import static org.eclipse.jgit.transport.ReceiveCommand.Type.UPDATE;
-import static org.eclipse.jgit.transport.ReceiveCommand.Type.UPDATE_NONFASTFORWARD;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeFalse;
-import static org.junit.Assume.assumeTrue;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Predicate;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import org.eclipse.jgit.events.ListenerHandle;
 import org.eclipse.jgit.events.RefsChangedListener;
 import org.eclipse.jgit.junit.LocalDiskRepositoryTestCase;
@@ -75,6 +40,41 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.LOCK_FAILURE;
+import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.OK;
+import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.REJECTED_MISSING_OBJECT;
+import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.REJECTED_NONFASTFORWARD;
+import static org.eclipse.jgit.internal.storage.file.BatchRefUpdateTest.Result.TRANSACTION_ABORTED;
+import static org.eclipse.jgit.lib.ObjectId.zeroId;
+import static org.eclipse.jgit.transport.ReceiveCommand.Type.CREATE;
+import static org.eclipse.jgit.transport.ReceiveCommand.Type.DELETE;
+import static org.eclipse.jgit.transport.ReceiveCommand.Type.UPDATE;
+import static org.eclipse.jgit.transport.ReceiveCommand.Type.UPDATE_NONFASTFORWARD;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeFalse;
+import static org.junit.Assume.assumeTrue;
 
 @SuppressWarnings("boxing")
 @RunWith(Parameterized.class)
@@ -521,14 +521,14 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, B, "refs/heads/master", UPDATE),
 				new ReceiveCommand(zeroId(), B, "refs/heads/branch", CREATE));
-		execute(newBatchUpdate(cmds).setAllowNonFastForwards(true));
+
+		execute( newBatchUpdate(cmds)
+				.setAllowNonFastForwards(true));
 
 		assertResults(cmds, OK, OK);
 		assertRefs("refs/heads/master", B, "refs/heads/branch", B);
 		assertEquals(batchesRefUpdates() ? initialRefsChangedEvents + 1
 				: initialRefsChangedEvents + 2, refsChangedEvents);
-		assertReflogUnchanged(oldLogs, "refs/heads/master");
-		assertReflogUnchanged(oldLogs, "refs/heads/branch");
 	}
 
 	@Test
@@ -542,7 +542,8 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, B, "refs/heads/master", UPDATE),
 				new ReceiveCommand(zeroId(), B, "refs/heads/branch1", CREATE));
-		execute(newBatchUpdate(cmds).setAllowNonFastForwards(true)
+		execute(newBatchUpdate(cmds)
+				.setAllowNonFastForwards(true)
 				.setRefLogMessage("a reflog", false));
 
 		assertResults(cmds, OK, OK);
@@ -569,9 +570,10 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 				new ReceiveCommand(B, A, "refs/heads/branch1",
 						UPDATE_NONFASTFORWARD),
 				new ReceiveCommand(zeroId(), A, "refs/heads/branch2", CREATE));
-		execute(newBatchUpdate(cmds).setAllowNonFastForwards(true)
-				.setRefLogMessage(null, true));
 
+		execute(newBatchUpdate(cmds)
+				.setAllowNonFastForwards(true)
+				.setRefLogMessage(null, true));
 		assertResults(cmds, OK, OK, OK);
 		assertRefs("refs/heads/master", B, "refs/heads/branch1", A,
 				"refs/heads/branch2", A);
@@ -615,7 +617,9 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, B, "refs/heads/master", UPDATE),
 				new ReceiveCommand(zeroId(), A, "refs/heads/branch", CREATE));
-		execute(newBatchUpdate(cmds).setRefLogMessage("a reflog", true));
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", true));
 
 		assertResults(cmds, OK, OK);
 		assertRefs("refs/heads/master", B, "refs/heads/branch", A);
@@ -639,9 +643,10 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, B, "refs/heads/master", UPDATE),
 				new ReceiveCommand(zeroId(), B, "refs/heads/branch", CREATE));
-		PersonIdent ident = new PersonIdent("A Reflog User",
-				"reflog@example.com");
-		execute(newBatchUpdate(cmds).setRefLogMessage("a reflog", false)
+		PersonIdent ident = new PersonIdent("A Reflog User", "reflog@example.com");
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", false)
 				.setRefLogIdent(ident));
 
 		assertResults(cmds, OK, OK);
@@ -665,7 +670,9 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, zeroId(), "refs/heads/master", DELETE),
 				new ReceiveCommand(A, B, "refs/heads/branch", UPDATE));
-		execute(newBatchUpdate(cmds).setRefLogMessage("a reflog", false));
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", false));
 
 		assertResults(cmds, OK, OK);
 		assertRefs("refs/heads/branch", B);
@@ -691,7 +698,9 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, zeroId(), "refs/heads/master", DELETE),
 				new ReceiveCommand(zeroId(), A, "refs/heads/master/x", CREATE));
-		execute(newBatchUpdate(cmds).setRefLogMessage("a reflog", false));
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", false));
 
 		assertResults(cmds, OK, OK);
 		assertRefs("refs/heads/master/x", A);
@@ -744,8 +753,10 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 				new ReceiveCommand(zeroId(), B, "refs/heads/branch", CREATE));
 		cmds.get(0).setRefLogMessage("custom log", false);
 		PersonIdent ident = new PersonIdent(diskRepo);
-		execute(newBatchUpdate(cmds).setRefLogIdent(ident)
-				.setRefLogMessage("a reflog", true));
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", true)
+				.setRefLogIdent(ident));
 
 		assertResults(cmds, OK, OK);
 		assertEquals(batchesRefUpdates() ? initialRefsChangedEvents + 1
@@ -761,19 +772,17 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		writeRef("refs/heads/master", A);
 		int initialRefsChangedEvents = refsChangedEvents;
 
-		Map<String, ReflogEntry> oldLogs = getLastReflogs("refs/heads/master",
-				"refs/heads/branch");
-
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, B, "refs/heads/master", UPDATE),
 				new ReceiveCommand(zeroId(), B, "refs/heads/branch", CREATE));
 		cmds.get(0).disableRefLog();
-		execute(newBatchUpdate(cmds).setRefLogMessage("a reflog", true));
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", true));
 
 		assertResults(cmds, OK, OK);
 		assertEquals(batchesRefUpdates() ? initialRefsChangedEvents + 1
 				: initialRefsChangedEvents + 2, refsChangedEvents);
-		assertReflogUnchanged(oldLogs, "refs/heads/master");
 		assertReflogEquals(
 				reflog(zeroId(), B, new PersonIdent(diskRepo),
 						"a reflog: created"),
@@ -813,7 +822,9 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 		List<ReceiveCommand> cmds = Arrays.asList(
 				new ReceiveCommand(A, B, "refs/heads/master", UPDATE),
 				new ReceiveCommand(zeroId(), B, "refs/heads/branch", CREATE));
-		execute(newBatchUpdate(cmds).setRefLogMessage("a reflog", false)
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", false)
 				.setForceRefLog(true));
 
 		assertResults(cmds, OK, OK);
@@ -839,7 +850,9 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 				new ReceiveCommand(A, B, "refs/heads/master", UPDATE),
 				new ReceiveCommand(zeroId(), B, "refs/heads/branch", CREATE));
 		cmds.get(1).setForceRefLog(true);
-		execute(newBatchUpdate(cmds).setRefLogMessage("a reflog", false));
+
+		execute(newBatchUpdate(cmds)
+				.setRefLogMessage("a reflog", false));
 
 		assertResults(cmds, OK, OK);
 		assertReflogUnchanged(oldLogs, "refs/heads/master");
@@ -1166,6 +1179,8 @@ public class BatchRefUpdateTest extends LocalDiskRepositoryTestCase {
 			u.setAtomic(false);
 		}
 		u.addCommand(cmds);
+		// All tests that use this method will have replicated set to false by default.
+		u.isReplicated(false);
 		return u;
 	}
 

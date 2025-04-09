@@ -12,7 +12,6 @@
 package org.eclipse.jgit.internal.storage.file;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -90,11 +89,11 @@ public class PackFileTest {
 		assertEquals(preserved.getPackExt(), PackExt.PACK);
 	}
 
-	@Test
+	@Test(expected =  IllegalArgumentException.class)
 	public void cannotCreatePreservedNoExtFromNonPreservedNoExt()
 			throws Exception {
-		assertThrows(IllegalArgumentException.class, () -> TEST_PACKFILE_NO_EXT
-				.createPreservedForDirectory(TEST_PRESERVED_DIR));
+
+		TEST_PACKFILE_NO_EXT.createPreservedForDirectory(TEST_PRESERVED_DIR);
 	}
 
 	@Test

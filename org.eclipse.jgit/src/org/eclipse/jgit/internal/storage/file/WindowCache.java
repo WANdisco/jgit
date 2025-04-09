@@ -14,9 +14,14 @@ package org.eclipse.jgit.internal.storage.file;
 import java.io.IOException;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFileAttributes;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Random;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,6 +36,8 @@ import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.storage.file.WindowCacheConfig;
 import org.eclipse.jgit.storage.file.WindowCacheStats;
 import org.eclipse.jgit.util.Monitoring;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Caches slices of a {@link org.eclipse.jgit.internal.storage.file.Pack} in
@@ -107,6 +114,9 @@ import org.eclipse.jgit.util.Monitoring;
  * other threads.
  */
 public class WindowCache {
+
+	private final static Logger LOG = LoggerFactory
+			.getLogger(WindowCache.class);
 
 	/**
 	 * Record statistics for a cache
@@ -337,6 +347,8 @@ public class WindowCache {
 
 	private static volatile WindowCache cache;
 
+	private static volatile Timer windowCacheCleanerTimer;
+
 	private static volatile int streamFileThreshold;
 
 	static {
@@ -366,6 +378,18 @@ public class WindowCache {
 		cache = nc;
 		streamFileThreshold = cfg.getStreamFileThreshold();
 		DeltaBaseCache.reconfigure(cfg);
+
+		final Timer timer = windowCacheCleanerTimer;
+		if (timer != null) {
+			timer.cancel();
+		}
+
+		if (cfg.isPackedGitOpenFilesCacheCleanEnabled()) {
+			windowCacheCleanerTimer = new Timer("WindowCacheCleaner", true);
+			windowCacheCleanerTimer.scheduleAtFixedRate(new WindowCacheCleaner(cfg),
+			                          cfg.getPackedGitOpenFilesCacheCleanDelay(),
+			                          cfg.getPackedGitOpenFilesCacheCleanPeriod());
+		}
 	}
 
 	static int getStreamFileThreshold() {
@@ -1044,5 +1068,117 @@ public class WindowCache {
 
 	private static final class Lock {
 		// Used only for its implicit monitor.
+	}
+
+	/**
+	 * TimerTask implementation to schedule cleaning up WindowCache in the
+	 * event of an out of band GC operation, performed by CGit or JGit,
+	 * effectively rendering the cache entries superfluous.
+	 */
+	static final class WindowCacheCleaner extends TimerTask {
+
+		private final WindowCacheConfig cfg;
+
+		private boolean firstRun;
+
+		WindowCacheCleaner(WindowCacheConfig cfg) {
+			this.cfg = cfg;
+			this.firstRun = true;
+		}
+
+		@Override
+		public void run() {
+			if (firstRun) {
+				LOG.info("WindowCacheCleaner task enabled, scheduling with delay: [{}ms] and period [{}ms]",
+				         cfg.getPackedGitOpenFilesCacheCleanDelay(),
+				         cfg.getPackedGitOpenFilesCacheCleanPeriod());
+				firstRun = false;
+			}
+
+			LOG.info("Starting WindowCacheCleaner task.");
+
+			long startTime = System.currentTimeMillis();
+			int entriesEvicted = cleanCacheOfStaleEntries();
+			long elapsedTime = System.currentTimeMillis() - startTime;
+
+			LOG.info("WindowCacheCleaner task took [{}ms] and evicted [{}] entries from the WindowCache",
+			         elapsedTime, entriesEvicted);
+		}
+
+		private int cleanCacheOfStaleEntries() {
+			final WindowCache wc = WindowCache.getInstance();
+			int entriesEvicted = 0;
+
+			for (int cacheIndex = 0; cacheIndex < wc.tableSize; cacheIndex++) {
+				Entry entry = wc.table.get(cacheIndex);
+
+				if (entry == null) {
+					continue;
+				}
+
+				synchronized (wc.lock(entry.ref.getPack(), entry.ref.getPosition())) {
+					boolean attemptedEviction = true;
+					do {
+						entry = wc.table.get(cacheIndex);
+
+						if (shouldNotRemove(entry)) {
+							attemptedEviction = false;
+							break;
+						}
+
+						LOG.debug("Removing entry for packfile[{}]", entry.ref.getPack().getPackFile().getAbsolutePath());
+
+						for (Entry e = entry; e != null; e = e.next) {
+							e.kill();
+						}
+					} while (!wc.table.compareAndSet(cacheIndex, entry, null));
+
+					if(attemptedEviction) {
+						entriesEvicted++;
+					}
+				}
+			}
+			wc.gc();
+			return entriesEvicted;
+		}
+
+		private boolean shouldNotRemove(Entry entry) {
+			return (entry == null ||
+			        entry.ref == null ||
+			        entry.ref.getPack() == null ||
+			        entry.ref.getPack().getPackFile() == null ||
+			        isPackFileReferenceValid(entry.ref.getPack()));
+		}
+
+		/**
+		 * Check the underlying packfile file exists - if not it may have been GC'd.
+		 * Going a step further, check the fileKey of the packfile snapshot against the current filekey
+		 * returned by the filesystem, if these do not match, evict the entry.
+		 * It has been observed that an out of band GC may rewrite a packfile temporarily to
+		 * `old-xxxx.pack` and immediately delete it - this is what the cache entry file descriptor could
+		 * be left pointing to.
+		 *
+		 * Filekeys are OS dependent unique identifiers to a file, the Unix variants are tuples of the form
+		 * (st_dev:st_ino) - as returned from the stat() system call.
+		 *
+		 * @param packfile {@link Pack} under scrutiny
+		 * @return true if the packfile is valid, false if it does not exist or the filekeys do not match.
+		 */
+		private boolean isPackFileReferenceValid(Pack packfile) {
+			if (!packfile.getPackFile().exists()) {
+				return false;
+			}
+
+			try {
+				final PosixFileAttributes attrs = Files.getFileAttributeView(packfile.getPackFile().toPath(),
+				                                                                PosixFileAttributeView.class)
+				                                          .readAttributes();
+				return attrs.fileKey().equals(packfile.getFileSnapshot().getFileKey());
+			} catch (IOException e) {
+				// if there's a problem here lets just evict the entry instead of risking
+				// corruption somewhere downstream
+				return false;
+			}
+		}
 	}
 }

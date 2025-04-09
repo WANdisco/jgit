@@ -19,11 +19,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import com.wandisco.gerrit.gitms.shared.api.repository.ReceiveCmdRefLog;
 import org.eclipse.jgit.annotations.NonNull;
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.lib.AnyObjectId;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -37,7 +39,7 @@ import org.eclipse.jgit.revwalk.RevWalk;
  * This command instance roughly translates to the server side representation of
  * the {@link org.eclipse.jgit.transport.RemoteRefUpdate} created by the client.
  */
-public class ReceiveCommand {
+public class ReceiveCommand implements ReceiveCmdRefLog {
 	/** Type of operation requested. */
 	public enum Type {
 		/** Create a new ref; the ref must not already exist. */
@@ -254,6 +256,8 @@ public class ReceiveCommand {
 	private boolean refLogIncludeResult;
 
 	private Boolean forceRefLog;
+
+	private PersonIdent refLogPersonIdent;
 
 	/**
 	 * Create a new command for
@@ -578,6 +582,7 @@ public class ReceiveCommand {
 	 *            forced-update) should be appended to the user supplied message.
 	 * @since 4.9
 	 */
+	@Override
 	public void setRefLogMessage(String msg, boolean appendStatus) {
 		customRefLog = true;
 		if (msg == null && !appendStatus) {
@@ -589,6 +594,24 @@ public class ReceiveCommand {
 			refLogMessage = msg;
 			refLogIncludeResult = appendStatus;
 		}
+	}
+
+	/**
+	 * Set the PersonIdent instance. This will be used to identify the user name and email in the reflog
+	 * @param refLogPersonIdent
+	 */
+	@Override
+	public void setRefLogPersonIdent(PersonIdent refLogPersonIdent) {
+		this.refLogPersonIdent = refLogPersonIdent;
+	}
+
+	/**
+	 * Get the PersonIdent instance
+	 * @return an instance of PersonIdent
+	 */
+	@Override
+	public PersonIdent getRefLogPersonIdent() {
+		return refLogPersonIdent;
 	}
 
 	/**
@@ -647,6 +670,7 @@ public class ReceiveCommand {
 	 * @since 4.9
 	 */
 	@Nullable
+	@Override
 	public String getRefLogMessage() {
 		return refLogMessage;
 	}
