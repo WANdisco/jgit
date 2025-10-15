@@ -11,21 +11,31 @@
 
 package org.eclipse.jgit.lib;
 
-import java.io.IOException;
-import java.text.MessageFormat;
-
+import com.wandisco.gerrit.gitms.shared.api.repository.RefLogInfo;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.PushCertificate;
+import org.eclipse.jgit.util.ReplicationConfiguration;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.text.MessageFormat;
+
+import static org.eclipse.jgit.lib.ReplicatedUpdate.replicateUpdate;
+import static org.eclipse.jgit.util.ReplicationConfiguration.shouldReplicateRepository;
 import org.eclipse.jgit.util.References;
 
 /**
  * Creates, updates or deletes any reference.
  */
 public abstract class RefUpdate {
+
 	/**
 	 * Status of an update request.
 	 * <p>
@@ -135,9 +145,37 @@ public abstract class RefUpdate {
 		 * @since 4.9
 		 */
 		REJECTED_OTHER_REASON;
+
+		// Allow consumers to create the enum from a string, regardless of case.
+
+		/**
+		 * Return enumeration from string representation regardless of case.
+		 * @param resultAsString string representation of enum value.
+		 * @return Result Value converted back to enum.
+		 */
+		public static Result forValue(String resultAsString) {
+			if (resultAsString == null) {
+				return null;
+			}
+			final String upperValue = resultAsString.toUpperCase();
+			return Result.valueOf(upperValue);
+		}
+
+		/**
+		 * allow caller to turn this into a string, for use in REST Queries etc.
+		 * Note this is the name of the enum, which may not be the same as the string
+		 * representation.	E.g enum WALK(123) may have a toValue name of "walk" but
+		 * a toString value of 123.
+		 * @return Returns string representation of the name of the enumeration
+		 */
+		public String toValue() {
+			return this.name().toLowerCase();
+		}
 	}
 
-	/** New value the caller wants this ref to have. */
+	/**
+	 * New value the caller wants this ref to have.
+	 */
 	private ObjectId newValue;
 
 	/** Does this specification ask for forced updated (rewind/reset)? */
@@ -174,10 +212,10 @@ public abstract class RefUpdate {
 
 	/**
 	 * Is this RefUpdate detaching a symbolic ref?
-	 *
+	 * <p>
 	 * We need this info since this.ref will normally be peeled of in case of
 	 * detaching a symbolic ref (HEAD for example).
-	 *
+	 * <p>
 	 * Without this flag we cannot decide whether the ref has to be updated or
 	 * not in case when it was a symbolic ref and the newValue == oldValue.
 	 */
@@ -432,9 +470,9 @@ public abstract class RefUpdate {
 	 *            message.
 	 */
 	public void setRefLogMessage(String msg, boolean appendStatus) {
-		if (msg == null && !appendStatus)
+		if (msg == null && !appendStatus) {
 			disableRefLog();
-		else if (msg == null && appendStatus) {
+		} else if (msg == null && appendStatus) {
 			refLogMessage = ""; //$NON-NLS-1$
 			refLogIncludeResult = true;
 		} else {
@@ -575,6 +613,25 @@ public abstract class RefUpdate {
 	}
 
 	/**
+	 * Get the old ref ID that should be used for passing to the replication
+	 * engine.
+	 * <p>
+	 * Where the expected (client) is available, we should use the it over
+	 * the old rev as it is Git MS and not Gerrit MS that gets the lock
+	 * on the git repo in the replicated scenario. This allows us to avoid
+	 * overwriting commits in a repo which could have been updated
+	 * already from another node.
+	 *
+	 * @return ObjectId that should be used for passing to the replication
+	 * engine.
+	 */
+	private ObjectId getReplicationOldObjectId() {
+		ObjectId clientOldObjectId = getExpectedOldObjectId();
+		return (clientOldObjectId != null) ? clientOldObjectId :
+				getOldObjectId() == null ? ObjectId.zeroId() : getOldObjectId();
+	}
+
+	/**
 	 * Gracefully update the ref to the new value.
 	 * <p>
 	 * Merge test will be performed according to {@link #isForceUpdate()}.
@@ -583,20 +640,41 @@ public abstract class RefUpdate {
 	 *            a RevWalk instance this update command can borrow to perform
 	 *            the merge test. The walk will be reset to perform the test.
 	 * @return the result status of the update.
-	 * @throws java.io.IOException
-	 *             an unexpected IO error occurred while writing changes.
+	 * @throws IOException an unexpected IO error occurred while writing
+	 *					   changes.
 	 */
-	public Result update(RevWalk walk) throws IOException {
+	public Result update(final RevWalk walk) throws IOException {
 		requireCanDoUpdate();
+
+		return shouldReplicateRepository(getRepository()) ?
+			   doReplicatedUpdate() :
+			   unreplicatedUpdate(walk);
+	}
+
+	/**
+	 * Gracefully update the ref to the new value.
+	 * <p>
+	 * Merge test will be performed according to {@link #isForceUpdate()}.
+	 *
+	 * @param walk a RevWalk instance this update command can borrow to perform
+	 *			   the merge test. The walk will be reset to perform the test.
+	 * @return the result status of the update.
+	 * @throws IOException an unexpected IO error occurred while
+	 *							   writing changes.
+	 */
+	public Result unreplicatedUpdate(final RevWalk walk) throws IOException {
 		try {
-			return result = updateImpl(walk, new Store() {
+			result = updateImpl(walk, new Store() {
 				@Override
 				Result execute(Result status) throws IOException {
-					if (status == Result.NO_CHANGE)
+					if (status == Result.NO_CHANGE) {
 						return status;
+					}
 					return doUpdate(status);
 				}
 			});
+
+			return result;
 		} catch (IOException x) {
 			result = Result.IO_FAILURE;
 			throw x;
@@ -623,17 +701,137 @@ public abstract class RefUpdate {
 		}
 	}
 
+	// The username context is going to be shared across refUpdates and batchRefupdates...
+	// To avoid us having to keep 2 versions of this, and potentially only one being used, and then how do we clear
+	// the other.. I am using this general RefUpdate username, for both single updates and batches of updates.
+	private static final ThreadLocal<String> username = new ThreadLocal<String>();
+
+	/**
+	 * Set the username information.
+	 * The username is set in a TLS to be thread safe for multi threaded parallel calls.
+	 *
+	 * @param user Username
+	 */
+	public static void setUsername(String user) {
+		username.set(user);
+	}
+
+	/**
+	 * This has to happen first, in any ref update / packed batch ref update call.
+	 * This is so we can clear out the username in this thread context before we go any further.. This prevents us
+	 * leaving stale username data, ensuring that each new request is clean.
+	 * IF an exception happened we could end up with non authenticated calls using old stale information.
+	 *
+	 * @return String which is the username set or null.
+	 */
+	public static String getUsernameAndClear() {
+
+		String user = username.get();
+		setUsername(null);
+		return user;
+	}
+
+	private Result doReplicatedUpdate() throws IOException {
+		String user = getUsernameAndClear();
+		final String fsPath = getRepository().getDirectory().getAbsolutePath();
+		final ObjectId oldRev = getReplicationOldObjectId();
+		final ObjectId newRev = getNewObjectId();
+		final String refName = getName();
+
+		final File refFile = new File(fsPath, refName);
+		//get the lastModified for the ref prior to the update
+		final long oldLastModified = refFile.lastModified();
+
+		RefLogInfo refLog;
+		Result res;
+		if(refLogIdent == null) {
+			// There are cases where we don't have a reflog message and PersonIdent. In this case
+			// we should use the fallback repository user and have a default message.
+			PersonIdent ident = new PersonIdent(getRepository());
+			res = replicateUpdate(user, oldRev, newRev, refName, getRepository(),
+					new RefLogInfo("push", ident.getName(), ident.getEmailAddress()));
+		} else {
+			// This result is not always available currently. As the rp-git-update script returns only 0 for OK, we later
+			// use a verification approach to find out what we did.	 So we can support null behaviour here for now...
+			refLog = new RefLogInfo(refLogMessage, refLogIdent.getName(), refLogIdent.getEmailAddress());
+			res = replicateUpdate(user, oldRev, newRev, refName, getRepository(), refLog);
+		}
+
+		// In the unreplicated case the in-memory RefUpdate result will be updated after the operation. In the
+		// replicated case we've done the update out of band so we need to tack the result back into the RefUpdate.
+		if (res != null) {
+			this.result = res;
+		}
+
+		// force a reload of the ref if the lastModified is within 2.5 seconds of
+		// the last time a push was made to the same ref.
+		if (refFile.lastModified() - oldLastModified <= 2500) {
+			getRefDatabase().getRef(getName());
+		}
+
+		return res;
+	}
+
+
+	private boolean canDelete() throws IOException {
+		final String myName = detachingSymbolicRef
+				? getRef().getName()
+				: getRef().getLeaf().getName();
+		if (myName.startsWith(Constants.R_HEADS) && !getRepository().isBare()) {
+			Ref head = getRefDatabase().getRef(Constants.HEAD);
+			while (head != null && head.isSymbolic()) {
+				head = head.getTarget();
+				if (myName.equals(head.getName())) {
+					return false;
+				}
+			}
+		}
+
+		return true;
+	}
+
 	/**
 	 * Delete the ref.
 	 *
-	 * @param walk
-	 *            a RevWalk instance this delete command can borrow to perform
-	 *            the merge test. The walk will be reset to perform the test.
+	 * @param walk a RevWalk instance this delete command can borrow to perform
+	 *			   the merge test. The walk will be reset to perform the test.
 	 * @return the result status of the delete.
-	 * @throws java.io.IOException
-	 *             if an IO error occurred
+	 * @throws IOException If an IO error occurred
 	 */
-	public Result delete(RevWalk walk) throws IOException {
+	public Result delete(final RevWalk walk) throws IOException {
+
+		if (shouldReplicateRepository(getRepository())) {
+			if (!canDelete()) {
+				result = Result.REJECTED_CURRENT_BRANCH;
+				return result;
+			}
+
+			// TODO: trevorg we had no way to verify by walking as it would have been deleted
+			// as we now return success - lets use the result.
+			result = doReplicatedUpdate();
+			// no_change indicates success for a delete...
+			// return Result.NO_CHANGE;
+			return result;
+		}
+
+		return unreplicatedDelete(walk);
+	}
+
+	/**
+	 * Delete the ref.
+	 *
+	 * @param walk a RevWalk instance this delete command can borrow to perform
+	 *			   the merge test. The walk will be reset to perform the test.
+	 * @return the result status of the delete.
+	 * @throws IOException If an IO error occurred
+	 */
+	public Result unreplicatedDelete(final RevWalk walk) throws IOException {
+
+		if (!canDelete()) {
+			result = Result.REJECTED_CURRENT_BRANCH;
+			return result;
+		}
+
 		final String myName = detachingSymbolicRef
 				? getRef().getName()
 				: getRef().getLeaf().getName();
@@ -674,11 +872,15 @@ public abstract class RefUpdate {
 	 * @throws java.io.IOException
 	 *             if an IO error occurred
 	 */
-	public Result link(String target) throws IOException {
-		if (!target.startsWith(Constants.R_REFS))
-			throw new IllegalArgumentException(MessageFormat.format(JGitText.get().illegalArgumentNotA, Constants.R_REFS));
-		if (checkConflicting && getRefDatabase().isNameConflicting(getName()))
+	public Result unreplicatedLink(String target) throws IOException {
+		if (!target.startsWith(Constants.R_REFS)) {
+			throw new IllegalArgumentException(
+					MessageFormat.format(JGitText.get().illegalArgumentNotA,
+							Constants.R_REFS));
+		}
+		if (checkConflicting && getRefDatabase().isNameConflicting(getName())) {
 			return Result.LOCK_FAILURE;
+		}
 		try {
 			if (!tryLock(false))
 				return Result.LOCK_FAILURE;
@@ -706,7 +908,52 @@ public abstract class RefUpdate {
 		}
 	}
 
-	private Result updateImpl(RevWalk walk, Store store)
+	/**
+	 * Replace this reference with a symbolic reference to another reference.
+	 * <p>
+	 * This exact reference (not its traversed leaf) is replaced with a symbolic
+	 * reference to the requested name.
+	 *
+	 * @param target name of the new target for this reference. The new target
+	 *				 name must be absolute, so it must begin with {@code refs/}.
+	 * @return {@link Result#NEW} or {@link Result#FORCED} on success.
+	 * @throws IOException If an IO error occurred
+	 */
+	public Result link(String target) throws IOException {
+		if (!target.startsWith(Constants.R_REFS)) {
+			throw new IllegalArgumentException(MessageFormat.format(JGitText.get().illegalArgumentNotA, Constants.R_REFS));
+		}
+
+		if (shouldReplicateRepository(getRepository())) {
+
+			String port = ReplicationConfiguration.getPort();
+
+			if (port != null && !port.isEmpty()) {
+				try {
+					String newHead = URLEncoder.encode(target, "UTF-8");
+					String repoPath = URLEncoder.encode(getRepository().getDirectory().getAbsolutePath(), "UTF-8");
+					URL url = new URL(String.format("http://127.0.0.1:%s/gerrit/setHead?newHead=%s&repoPath=%s", port, newHead, repoPath));
+					HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
+					httpCon.setUseCaches(false);
+					httpCon.setRequestMethod("PUT");
+					int response = httpCon.getResponseCode();
+					httpCon.disconnect();
+
+					//TODO: Catch errors here/do timeout logic if required
+					if (response != 200) {
+						throw new IOException("Failure to update repo HEAD, return code from replicator: " + response);
+					}
+				} catch (IOException e) {
+					throw new IOException("Error with updating repo HEAD: " + e.toString());
+				}
+			}
+		}
+
+		//fall through to unreplicatedLink if we can't get enough information to replicate
+		return unreplicatedLink(target);
+	}
+
+	private Result updateImpl(final RevWalk walk, final Store store)
 			throws IOException {
 		RevObject newObj;
 		RevObject oldObj;
@@ -721,12 +968,24 @@ public abstract class RefUpdate {
 			// itself. Otherwise, we will update the leaf reference, which should be
 			// an ObjectIdRef.
 			if (!tryLock(!detachingSymbolicRef)) {
+				// Before we give up, we could be trying to lock a leaf node which is already in the final state and
+				// already updated... Idempotent check...
+				if ( checkIsInFinalStateAlready(walk) ) {
+					return store.execute(Result.NO_CHANGE);
+				}
 				return Result.LOCK_FAILURE;
 			}
 			if (expValue != null) {
 				final ObjectId o;
 				o = oldValue != null ? oldValue : ObjectId.zeroId();
 				if (!AnyObjectId.isEqual(expValue, o)) {
+					// Before we give up, we could be trying to update a repo which has already been updated...
+					// Look below without locking it already deals with this case - so mirroring it for locking.
+					// Idempotent check...
+					if ( checkIsInFinalStateAlready(walk) ) {
+						return store.execute(Result.NO_CHANGE);
+					}
+
 					return Result.LOCK_FAILURE;
 				}
 			}
@@ -760,6 +1019,40 @@ public abstract class RefUpdate {
 		} finally {
 			unlock();
 		}
+	}
+
+	/**
+	 *	Before giving up with lock failure allow idompotent operations
+	 *	to indicate success / no change if we are already in the final state. This used to happen
+	 *	before expValue locking, so allowing this ot continue, otherwise retries could fail that
+	 *	should succeed.
+	 * @param walk - Walk information for this repository operation.
+	 * @return TRUE - indicates in final state already so current repo state matches new state
+	 * @throws IOException If an IO error occurred
+	 */
+	private boolean checkIsInFinalStateAlready(final RevWalk walk) throws IOException {
+		RevObject newObj;
+		RevObject oldObj;
+
+		// newValue is the state to change the repo to.
+		try {
+			newObj = safeParseNew(walk, newValue);
+		} catch (MissingObjectException e) {
+			return false;
+		}
+
+		// Old value if we obtained it means we just loaded this from the repo and its the current state.
+		// No current state of repo is thats its new and never existed before now, so either its not already in that
+		// state or it was a delete operation and wouldn't be calling into newUpdate to get to this check.
+		if (oldValue != null) {
+			// we dont need to deal with DELETES as this is updateImpl not delete
+			oldObj = safeParseOld(walk, oldValue);
+			if (newObj == oldObj && !detachingSymbolicRef) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

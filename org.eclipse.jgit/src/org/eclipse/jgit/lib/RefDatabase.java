@@ -610,4 +610,16 @@ public abstract class RefDatabase {
 		}
 		return null;
 	}
+
+
+	/** Refresh internals. To be overwritten if required
+	 * Ideally this would have been an abstract method, but we dont own/fork all the extenders of this base class
+	 * so it would fail to compile.
+	 *
+	 * @throws java.io.IOException
+	 *             the reference space cannot be accessed.
+	 */
+	public void refreshAndReload() throws IOException {
+		// Intentionally blank
+	}
 }

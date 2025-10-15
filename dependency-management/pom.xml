@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.eclipse.jgit</groupId>
+        <artifactId>org.eclipse.jgit-parent</artifactId>
+        <version>6.10.1-WDv2</version>
+    </parent>
+
+    <properties>
+        <!-- The BOM project is defined in the module that uses it. Otherwise a dependency would need to be added to the aggregator leve to allow update property to work.-->
+        <alm-common-bom-version>1.14.0.1-GITMS</alm-common-bom-version>
+    </properties>
+
+
+    <artifactId>dependency-management</artifactId>
+    <packaging>pom</packaging>
+
+    <profiles>
+        <profile>
+            <id>dependency-check</id>
+            <activation>
+                <property>
+                    <name>isOfficialBuild</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <executions>
+                            <execution>
+                                <id>Check Maven Dependencies</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.basedir}/dependency-management.sh</executable>
+                                    <arguments>
+                                        <argument>--project-version</argument>
+                                        <argument>${alm-common-bom-version}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>Check Bazel Dependencies</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.parent.basedir}/tools/check_sha.py</executable>
+                                    <workingDirectory>${project.parent.basedir}</workingDirectory>
+                                    <arguments>
+                                        <argument>--check</argument>
+                                        <argument>-u</argument>
+                                        <argument>${alm-common-bom-version}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <skip>${skipDependencyManagement}</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+            <!-- This is not strictly required by dependency management, but it is required to update dependency use for updateProperty-->
+            <dependencyManagement>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.wandisco</groupId>
+                        <artifactId>alm-common-bom</artifactId>
+                        <version>${alm-common-bom-version}</version>
+                        <type>pom</type>
+                        <scope>import</scope>
+                        <optional>true</optional>
+                    </dependency>
+                </dependencies>
+            </dependencyManagement>
+        </profile>
+        <profile>
+            <id>dependency-update</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <executions>
+                            <execution>
+                                <id>Update Maven Dependencies</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.basedir}/dependency-management.sh</executable>
+                                    <arguments>
+                                        <argument>--project-version</argument>
+                                        <argument>${alm-common-bom-version}</argument>
+                                        <argument>--update</argument>
+                                        <argument>--debug</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>Update Bazel Dependencies</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.parent.basedir}/tools/check_sha.py</executable>
+                                    <workingDirectory>${project.parent.basedir}</workingDirectory>
+                                    <arguments>
+                                        <argument>-u</argument>
+                                        <argument>${alm-common-bom-version}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <skip>${skipDependencyManagement}</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

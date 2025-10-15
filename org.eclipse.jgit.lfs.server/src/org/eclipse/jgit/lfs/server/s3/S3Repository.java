@@ -31,6 +31,7 @@ import java.util.Map;
 
 import org.eclipse.jgit.lfs.lib.AnyLongObjectId;
 import org.eclipse.jgit.lfs.server.LargeFileRepository;
+import org.eclipse.jgit.lfs.server.ReplicationInfo;
 import org.eclipse.jgit.lfs.server.Response;
 import org.eclipse.jgit.lfs.server.Response.Action;
 import org.eclipse.jgit.lfs.server.internal.LfsServerText;
@@ -132,22 +133,6 @@ public class S3Repository implements LargeFileRepository {
 		return -1;
 	}
 
-	/**
-	 * Cache metadata (size) for an object to avoid extra roundtrip to S3 in
-	 * order to retrieve this metadata for a given object. Subclasses can
-	 * implement a local cache and override {{@link #getSize(AnyLongObjectId)}
-	 * to retrieve the object size from the local cache to eliminate the need
-	 * for another roundtrip to S3
-	 *
-	 * @param oid
-	 *            the object id identifying the object to be cached
-	 * @param size
-	 *            the object's size (in bytes)
-	 */
-	protected void cacheObjectMetaData(AnyLongObjectId oid, long size) {
-		// no caching
-	}
-
 	private void validateConfig(S3Config config) {
 		assertNotEmpty(LfsServerText.get().undefinedS3AccessKey,
 				config.getAccessKey());
@@ -163,10 +148,24 @@ public class S3Repository implements LargeFileRepository {
 				config.getStorageClass());
 	}
 
-	private void assertNotEmpty(String message, String value) {
-		if (value == null || value.trim().length() == 0) {
-			throw new IllegalArgumentException(message);
-		}
+	@Override
+	public String getProjectIdentity() {
+		throw new UnsupportedOperationException("Not supported yet."); //$NON-NLS-<n>$
+	}
+
+
+	/**
+	 * Cache metadata (size) for an object to avoid extra roundtrip to S3 in
+	 * order to retrieve this metadata for a given object. Subclasses can
+	 * implement a local cache and override {{@link #getSize(AnyLongObjectId)}
+	 * to retrieve the object size from the local cache to eliminate the need
+	 * for another roundtrip to S3
+	 *
+	 * @param oid the object id identifying the object to be cached
+	 * @param size the object's size (in bytes)
+	 */
+	protected void cacheObjectMetaData(AnyLongObjectId oid, long size) {
+		// no caching
 	}
 
 	private URL getObjectUrl(AnyLongObjectId oid) {
@@ -180,7 +179,41 @@ public class S3Repository implements LargeFileRepository {
 		}
 	}
 
+
+	private void assertNotEmpty(String message, String value) {
+		if (value == null || value.trim().length() == 0) {
+			throw new IllegalArgumentException(message);
+		}
+	}
+
 	private String getPath(AnyLongObjectId oid) {
 		return oid.getName();
+	}
+
+	@Override
+	public String getProjectName() {
+		return null;
+	}
+
+	@Override
+	public boolean isReplica() {
+		// indication of false to isReplica protects the use of the other replication
+		// methods.
+		return false;
+	}
+
+	@Override
+	public String getReplicaGroupIdentifier() {
+		throw new UnsupportedOperationException("Replicated S3 LFS - Not supported yet."); //$NON-NLS-<n>$
+	}
+
+	@Override
+	public boolean isReplicated(AnyLongObjectId id) {
+		throw new UnsupportedOperationException("Replicated S3 LFS - Not supported yet."); //$NON-NLS-<n>$
+	}
+
+	@Override
+	public void setReplicationInfo(ReplicationInfo replicationInfo) {
+		throw new UnsupportedOperationException("Replicated S3 LFS - Not supported yet."); //$NON-NLS-<n>$
 	}
 }

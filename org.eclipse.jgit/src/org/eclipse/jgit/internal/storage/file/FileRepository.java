@@ -41,12 +41,15 @@ import org.eclipse.jgit.events.IndexChangedEvent;
 import org.eclipse.jgit.internal.JGitText;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory.AlternateHandle;
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory.AlternateRepository;
+import org.eclipse.jgit.lib.CoreConfig.HideDotFiles;
+import org.eclipse.jgit.lib.CoreConfig.SymLinks;
+import org.eclipse.jgit.storage.file.FileBasedConfig;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
+import org.eclipse.jgit.storage.pack.PackConfig;
 import org.eclipse.jgit.lib.BaseRepositoryBuilder;
 import org.eclipse.jgit.lib.BatchRefUpdate;
 import org.eclipse.jgit.lib.ConfigConstants;
 import org.eclipse.jgit.lib.Constants;
-import org.eclipse.jgit.lib.CoreConfig.HideDotFiles;
-import org.eclipse.jgit.lib.CoreConfig.SymLinks;
 import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ProgressMonitor;
@@ -58,35 +61,35 @@ import org.eclipse.jgit.lib.ReflogReader;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.storage.file.FileBasedConfig;
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
-import org.eclipse.jgit.storage.pack.PackConfig;
 import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.IO;
 import org.eclipse.jgit.util.RawParseUtils;
+import org.eclipse.jgit.util.ReplicationConfiguration;
 import org.eclipse.jgit.util.StringUtils;
 import org.eclipse.jgit.util.SystemReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.eclipse.jgit.lib.ReplicatedUpdate.replicatedCreate;
+
 /**
  * Represents a Git repository. A repository holds all objects and refs used for
  * managing source code (could by any type of file, but source code is what
  * SCM's are typically used for).
- *
+ * <p>
  * In Git terms all data is stored in GIT_DIR, typically a directory called
  * .git. A work tree is maintained unless the repository is a bare repository.
  * Typically the .git directory is located at the root of the work dir.
  *
  * <ul>
  * <li>GIT_DIR
- * 	<ul>
- * 		<li>objects/ - objects</li>
- * 		<li>refs/ - tags and heads</li>
- * 		<li>config - configuration</li>
- * 		<li>info/ - more configurations</li>
- * 	</ul>
+ *	<ul>
+ *		<li>objects/ - objects</li>
+ *		<li>refs/ - tags and heads</li>
+ *		<li>config - configuration</li>
+ *		<li>info/ - more configurations</li>
+ *	</ul>
  * </li>
  * </ul>
  * <p>
@@ -122,10 +125,10 @@ public class FileRepository extends Repository {
 	 * </pre>
 	 *
 	 * @param gitDir
-	 *            GIT_DIR (the location of the repository metadata).
+	 *			  GIT_DIR (the location of the repository metadata).
 	 * @throws java.io.IOException
-	 *             the repository appears to already exist but cannot be
-	 *             accessed.
+	 *			   the repository appears to already exist but cannot be
+	 *			   accessed.
 	 * @see FileRepositoryBuilder
 	 */
 	public FileRepository(File gitDir) throws IOException {
@@ -136,10 +139,10 @@ public class FileRepository extends Repository {
 	 * A convenience API for {@link #FileRepository(File)}.
 	 *
 	 * @param gitDir
-	 *            GIT_DIR (the location of the repository metadata).
+	 *			  GIT_DIR (the location of the repository metadata).
 	 * @throws java.io.IOException
-	 *             the repository appears to already exist but cannot be
-	 *             accessed.
+	 *			   the repository appears to already exist but cannot be
+	 *			   accessed.
 	 * @see FileRepositoryBuilder
 	 */
 	public FileRepository(String gitDir) throws IOException {
@@ -150,10 +153,10 @@ public class FileRepository extends Repository {
 	 * Create a repository using the local file system.
 	 *
 	 * @param options
-	 *            description of the repository's important paths.
+	 *			  description of the repository's important paths.
 	 * @throws java.io.IOException
-	 *             the user configuration file or repository configuration file
-	 *             cannot be accessed.
+	 *			   the user configuration file or repository configuration file
+	 *			   cannot be accessed.
 	 */
 	public FileRepository(BaseRepositoryBuilder options) throws IOException {
 		super(options);
@@ -219,10 +222,10 @@ public class FileRepository extends Repository {
 	 * {@inheritDoc}
 	 * <p>
 	 * Create a new Git repository initializing the necessary files and
-	 * directories.
+	 * directories. ( Locally only after calling replicated endpoint, or for unreplicated repository/system ).
 	 */
 	@Override
-	public void create(boolean bare) throws IOException {
+	public void unreplicatedCreate(boolean bare) throws IOException {
 		final FileBasedConfig cfg = getConfig();
 		if (cfg.getFile().exists()) {
 			throw new IllegalStateException(MessageFormat.format(
@@ -312,6 +315,29 @@ public class FileRepository extends Repository {
 		cfg.save();
 	}
 
+
+	/**
+	 * Create a new Git repository initializing the necessary files and
+	 * directories.
+	 *
+	 * @param bare if true, a bare repository is created.
+	 * @throws IOException in case of IO problem
+	 */
+	@Override
+	public void create(boolean bare) throws IOException {
+
+		if (!ReplicationConfiguration.isReplicatedSystem()) {
+			//unreplicated deployment fall through due to insufficient settings
+			LOG.debug("Detected a non-replicated system setup - using replicated Jgit library.\n" +
+					"Continuing as if non-replicated. If not doing an installation, please check setup.\n" +
+					"Consider using vanilla JGit, or correctly enable replication with this library.");
+			unreplicatedCreate(bare);
+			return;
+		}
+
+		replicatedCreate(getDirectory().getAbsolutePath());
+	}
+
 	/**
 	 * Get the directory containing the objects owned by this repository
 	 *
@@ -321,25 +347,25 @@ public class FileRepository extends Repository {
 		return objectDatabase.getDirectory();
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public ObjectDirectory getObjectDatabase() {
 		return objectDatabase;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public RefDatabase getRefDatabase() {
 		return refs;
 	}
 
-	@Override
-	public String getIdentifier() {
-		File directory = getDirectory();
-		if (directory != null) {
-			return directory.getPath();
-		}
-		throw new IllegalStateException();
-	}
-
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public FileBasedConfig getConfig() {
 		try {
@@ -353,6 +379,9 @@ public class FileRepository extends Repository {
 		return repoConfig;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	@Nullable
 	public String getGitwebDescription() throws IOException {
@@ -371,6 +400,9 @@ public class FileRepository extends Repository {
 		return d;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public void setGitwebDescription(@Nullable String description)
 			throws IOException {
@@ -415,12 +447,9 @@ public class FileRepository extends Repository {
 	 * advertise that it safely has that other repository's references, without
 	 * exposing any other details about the other repository. This may help a
 	 * client trying to push changes avoid pushing more than it needs to.
-	 *
-	 * @throws IOException
-	 *             if an IO error occurred
 	 */
 	@Override
-	public Set<ObjectId> getAdditionalHaves() throws IOException {
+	public Set<ObjectId> getAdditionalHaves() {
 		return getAdditionalHaves(null);
 	}
 
@@ -432,15 +461,10 @@ public class FileRepository extends Repository {
 	 * exposing any other details about the other repository. This may help a
 	 * client trying to push changes avoid pushing more than it needs to.
 	 *
-	 * @param skips
-	 *            Set of AlternateHandle Ids already seen
-	 *
+	 * @param skips Set of AlternateHandle Ids already seen
 	 * @return unmodifiable collection of other known objects.
-	 * @throws IOException
-	 *             if getting refs hits an IO error
 	 */
-	private Set<ObjectId> getAdditionalHaves(Set<AlternateHandle.Id> skips)
-			throws IOException {
+	private Set<ObjectId> getAdditionalHaves(Set<AlternateHandle.Id> skips) {
 		HashSet<ObjectId> r = new HashSet<>();
 		skips = objectDatabase.addMe(skips);
 		for (AlternateHandle d : objectDatabase.myAlternates()) {
@@ -448,7 +472,7 @@ public class FileRepository extends Repository {
 				FileRepository repo;
 
 				repo = ((AlternateRepository) d).repository;
-				for (Ref ref : repo.getRefDatabase().getRefs()) {
+				for (Ref ref : repo.getAllRefs().values()) {
 					if (ref.getObjectId() != null)
 						r.add(ref.getObjectId());
 					if (ref.getPeeledObjectId() != null)
@@ -464,22 +488,27 @@ public class FileRepository extends Repository {
 	 * Add a single existing pack to the list of available pack files.
 	 *
 	 * @param pack
-	 *            path of the pack file to open.
+	 *			  path of the pack file to open.
 	 * @throws java.io.IOException
-	 *             index file could not be opened, read, or is not recognized as
-	 *             a Git pack file index.
+	 *			   index file could not be opened, read, or is not recognized as
+	 *			   a Git pack file index.
 	 */
 	public void openPack(File pack) throws IOException {
 		objectDatabase.openPack(pack);
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public void scanForRepoChanges() throws IOException {
 		getRefDatabase().getRefs(); // This will look for changes to refs
 		detectIndexChanges();
 	}
 
-	/** Detect index changes. */
+	/**
+	 * Detect index changes.
+	 */
 	private void detectIndexChanges() {
 		if (isBare()) {
 			return;
@@ -498,6 +527,9 @@ public class FileRepository extends Repository {
 		notifyIndexChanged(false);
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public void notifyIndexChanged(boolean internal) {
 		synchronized (snapshotLock) {
@@ -506,6 +538,7 @@ public class FileRepository extends Repository {
 		fireEvent(new IndexChangedEvent(internal));
 	}
 
+	/** {@inheritDoc} */
 	@Override
 	public ReflogReader getReflogReader(String refName) throws IOException {
 		if (refs instanceof FileReftableDatabase) {
@@ -523,12 +556,9 @@ public class FileRepository extends Repository {
 		return new ReflogReaderImpl(this, ref.getName());
 	}
 
-	@Override
-	public @NonNull ReflogReader getReflogReader(@NonNull Ref ref)
-			throws IOException {
-		return new ReflogReaderImpl(this, ref.getName());
-	}
-
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public AttributesNodeProvider createAttributesNodeProvider() {
 		return new AttributesNodeProviderImpl(this);
@@ -539,7 +569,6 @@ public class FileRepository extends Repository {
 	 * {@link FileRepository}.
 	 *
 	 * @author <a href="mailto:arthur.daussy@obeo.fr">Arthur Daussy</a>
-	 *
 	 */
 	static class AttributesNodeProviderImpl implements
 			AttributesNodeProvider {
@@ -588,11 +617,14 @@ public class FileRepository extends Repository {
 
 	private boolean shouldAutoDetach() {
 		return getConfig().getBoolean(ConfigConstants.CONFIG_GC_SECTION,
-				ConfigConstants.CONFIG_KEY_AUTODETACH, true);
+				ConfigConstants.CONFIG_KEY_AUTODETACH, false);
 	}
 
-	@SuppressWarnings("FutureReturnValueIgnored")
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
+	@SuppressWarnings("FutureReturnValueIgnored")
 	public void autoGC(ProgressMonitor monitor) {
 		GC gc = new GC(this);
 		gc.setPackConfig(new PackConfig(this));
@@ -604,6 +636,21 @@ public class FileRepository extends Repository {
 		} catch (ParseException | IOException e) {
 			throw new JGitInternalException(JGitText.get().gcFailed, e);
 		}
+	}
+
+	@Override
+	public String getIdentifier() {
+		File directory = getDirectory();
+		if (directory != null) {
+			return directory.getPath();
+		}
+		throw new IllegalStateException();
+	}
+
+	@Override
+	public @NonNull ReflogReader getReflogReader(@NonNull Ref ref)
+			throws IOException {
+		return new ReflogReaderImpl(this, ref.getName());
 	}
 
 	/**

@@ -131,9 +131,9 @@ public class GC {
 	private static final Set<PackExt> CHILD_EXTS = Set.of(BITMAP_INDEX, INDEX,
 			REVERSE_INDEX);
 
-	private static final int DEFAULT_AUTOPACKLIMIT = 50;
+	private static final int DEFAULT_AUTOPACKLIMIT = 0;
 
-	private static final int DEFAULT_AUTOLIMIT = 6700;
+	private static final int DEFAULT_AUTOLIMIT = 0;
 
 	private static final boolean DEFAULT_WRITE_BLOOM_FILTER = false;
 

@@ -1,0 +1,20 @@
+template: |
+  # Remove sections you don't need.
+  features:
+    -
+  issues:
+    -
+  upgrade:
+    -
+  deprecations:
+    -
+  critical:
+    -
+  security:
+    -
+  fixes:
+    -
+  other:
+    -
+release_tag_re: (?:(^RP-.+(_WD|_WDv\d+|-WD\d*)$)|(^RELEASE_.+(-WDv\d+)$)|(^v.+(-WDv\d+)$)|(?!-SNAPSHOT))
+encoding: utf8

@@ -9,10 +9,10 @@
  */
 package org.eclipse.jgit.lfs.server;
 
-import java.io.IOException;
-
 import org.eclipse.jgit.annotations.Nullable;
 import org.eclipse.jgit.lfs.lib.AnyLongObjectId;
+
+import java.io.IOException;
 
 /**
  * Abstraction of a repository for storing large objects
@@ -58,9 +58,53 @@ public interface LargeFileRepository {
 	 * @param id
 	 *            id of the object
 	 * @return length of the object content in bytes, -1 if the object doesn't
-	 *         exist
+	 * exist, or hasn't been replicated yet for this replication group.
 	 * @throws java.io.IOException
 	 *             if an IO error occurred
 	 */
 	long getSize(AnyLongObjectId id) throws IOException;
+
+	/**
+	 * Replicated Repositories have additional information present to indicate
+	 * what replica group they are in.
+	 * @param replicationInfo replication group info for LFS repo.
+	 */
+	void setReplicationInfo(final ReplicationInfo replicationInfo);
+
+	/**
+	 * Replication projectName
+	 *
+	 * @return string with projectname
+	 */
+	String getProjectName();
+
+	/**
+	 * Replication project identity
+	 *
+	 * @return string with project ident.
+	 */
+	String getProjectIdentity();
+
+	/**
+	 * Replication Group Identifier
+	 *
+	 * @return string with replica group ident
+	 */
+	String getReplicaGroupIdentifier();
+
+	/**
+	 * Replica = true
+	 *
+	 * @return return true if is replicated repo.
+	 */
+	boolean isReplica();
+
+	/**
+	 * IsReplication indicates that the item is on disk, and also has been
+	 * replicated to other nodes in the same replication group as our identifier.
+	 *
+	 * @param id Item ID to check
+	 * @return boolean true if item represented by the id is replicated
+	 */
+	boolean isReplicated(AnyLongObjectId id);
 }

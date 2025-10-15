@@ -235,9 +235,9 @@ public class ReflogWriter {
 
 	private boolean shouldAutoCreateLog(String refName) {
 		Repository repo = refdb.getRepository();
-		CoreConfig.LogRefUpdates value = repo.isBare()
-				? CoreConfig.LogRefUpdates.FALSE
-				: CoreConfig.LogRefUpdates.TRUE;
+		// Cirata Note: Default to the old behaviour of 'true' also for bare repos since some
+		// operations and repository stats are based on written reflogs.
+		CoreConfig.LogRefUpdates value = CoreConfig.LogRefUpdates.TRUE;
 		value = repo.getConfig().getEnum(ConfigConstants.CONFIG_CORE_SECTION,
 				null, ConfigConstants.CONFIG_KEY_LOGALLREFUPDATES, value);
 		if (value != null) {

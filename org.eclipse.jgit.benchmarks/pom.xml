@@ -16,7 +16,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>6.10.1-SNAPSHOT</version>
+    <version>6.10.1-WDv2</version>
   </parent>
 
   <artifactId>org.eclipse.jgit.benchmarks</artifactId>
@@ -28,8 +28,41 @@
     <java.version>11</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jmh.version>1.37</jmh.version>
+    <gerrit-gitms-shared-version>4.0.0.1</gerrit-gitms-shared-version>
     <uberjar.name>benchmarks</uberjar.name>
   </properties>
+
+  <repositories>
+    <repository>
+      <id>wd_central</id>
+      <name>WANDisco - central repository</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
+    </repository>
+    <repository>
+      <id>jgit-repository</id>
+      <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
+    </repository>
+  </repositories>
+
+  <pluginRepositories>
+    <pluginRepository>
+      <id>wd_central_plugins</id>
+      <name>WANdisco central plugins</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>repo.eclipse.org.cbi-releases</id>
+      <url>https://repo.eclipse.org/content/repositories/cbi-releases/</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>repo.eclipse.org.cbi-snapshots</id>
+      <url>https://repo.eclipse.org/content/repositories/cbi-snapshots/</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>repo.eclipse.org.dash-releases</id>
+      <url>https://repo.eclipse.org/content/repositories/dash-licenses-releases/</url>
+    </pluginRepository>
+  </pluginRepositories>
 
   <dependencies>
     <dependency>
@@ -51,6 +84,11 @@
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit.junit</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.wandisco</groupId>
+      <artifactId>gerrit-gitms-shared</artifactId>
+      <version>${gerrit-gitms-shared-version}</version>
     </dependency>
   </dependencies>
 
@@ -226,22 +264,19 @@
       </plugins>
     </pluginManagement>
   </build>
+  <!-- WANdisco: Override distribution management to deploy to our internal artifactory
+       server. As it's also a Gerrit asset we deploy both snapshots and releases to
+       staging repository. -->
   <distributionManagement>
     <repository>
-      <id>repo.eclipse.org</id>
-      <name>JGit Maven Repository - Releases</name>
-      <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
+      <id>artifacts</id>
+      <name>WANdisco staging assets</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
     </repository>
     <snapshotRepository>
-      <id>repo.eclipse.org</id>
-      <name>JGit Maven Repository - Snapshots</name>
-      <url>https://repo.eclipse.org/content/repositories/jgit-snapshots/</url>
-      <uniqueVersion>true</uniqueVersion>
+      <id>snapshots</id>
+      <name>WANdisco snapshots repository</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
     </snapshotRepository>
-    <site>
-      <id>jgit.website</id>
-      <name>JGit Website</name>
-      <url>${jgit.website.url}</url>
-    </site>
   </distributionManagement>
 </project>

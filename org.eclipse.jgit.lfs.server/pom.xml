@@ -17,7 +17,7 @@
   <parent>
     <groupId>org.eclipse.jgit</groupId>
     <artifactId>org.eclipse.jgit-parent</artifactId>
-    <version>6.10.1-SNAPSHOT</version>
+    <version>6.10.1-WDv2</version>
   </parent>
 
   <artifactId>org.eclipse.jgit.lfs.server</artifactId>
@@ -33,6 +33,16 @@
   </properties>
 
   <dependencies>
+    <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+         really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+         scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
+    -->
+    <dependency>
+      <groupId>com.wandisco</groupId>
+      <artifactId>gerrit-gitms-shared</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
     <dependency>
       <groupId>org.eclipse.jgit</groupId>
       <artifactId>org.eclipse.jgit</artifactId>

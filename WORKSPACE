@@ -7,7 +7,12 @@ load_bazlets(commit = "f9c119e45d9a241bee720b7fbd6c7fdbc952da5f")
 
 load(
     "@com_googlesource_gerrit_bazlets//tools:maven_jar.bzl",
+    "MAVEN_LOCAL",
     "maven_jar",
+)
+load(
+    "//tools:maven_custom.bzl",
+    "WANDISCO_ASSETS",
 )
 
 http_archive(
@@ -92,6 +97,23 @@ maven_jar(
     sha1 = "c01428efa717624f7aabf4df319939dda9646b2d",
 )
 
+# WANdisco maven assets
+# TODO: check how to make this provided scope in LFS server same as we do in POM.xml
+_GERRIT_GITMS_VERSION = "4.0.0.1"
+
+maven_jar(
+    name = "gerrit-gitms-shared",
+    artifact = "com.wandisco:gerrit-gitms-shared:" + _GERRIT_GITMS_VERSION,
+    repository = WANDISCO_ASSETS,
+    sha1 = "152aa5b9fad4cfdf1893ac6a2aa6a1154ca63daf"
+)
+
+maven_jar(
+    name = "guava",
+    artifact = "com.google.guava:guava:33.2.1-jre",
+    sha1 = "818e780da2c66c63bbb6480fef1f3855eeafa3e4"
+)
+
 maven_jar(
     name = "javaewah",
     artifact = "com.googlecode.javaewah:JavaEWAH:1.2.3",
@@ -129,13 +151,13 @@ JNA_VERS = "5.14.0"
 maven_jar(
     name = "jna",
     artifact = "net.java.dev.jna:jna:" + JNA_VERS,
-    sha1 = "67bf3eaea4f0718cb376a181a629e5f88fa1c9dd",
+    #sha1 = "67bf3eaea4f0718cb376a181a629e5f88fa1c9dd",
 )
 
 maven_jar(
     name = "jna-platform",
     artifact = "net.java.dev.jna:jna-platform:" + JNA_VERS,
-    sha1 = "28934d48aed814f11e4c584da55c49fa7032b31b",
+    #sha1 = "28934d48aed814f11e4c584da55c49fa7032b31b",
 )
 
 maven_jar(
@@ -148,6 +170,38 @@ maven_jar(
     name = "commons-logging",
     artifact = "commons-logging:commons-logging:1.3.2",
     sha1 = "3dc966156ef19d23c839715165435e582fafa753",
+)
+
+maven_jar(
+    name = "commons-lang",
+    artifact = "commons-lang:commons-lang:2.6",
+    sha1 = "0ce1edb914c94ebc388f086c6827e8bdeec71ac2",
+)
+
+maven_jar(
+    name = "jcl-over-slf4j",
+    artifact = "org.slf4j:jcl-over-slf4j:1.7.5",
+    sha1 = "0cd5970bd13fa85f7bed41ca606d6daf7cbf1365",
+)
+
+LOG4J_VERSION = "2.17.1"
+
+maven_jar(
+    name = "log4j-core",
+    artifact = "org.apache.logging.log4j:log4j-core:" + LOG4J_VERSION,
+    sha1 = "e257b0562453f73eabac1bc3181ba33e79d193ed",
+)
+
+maven_jar(
+    name = "log4j-api",
+    artifact = "org.apache.logging.log4j:log4j-api:" + LOG4J_VERSION,
+    sha1 = "23cdb2c6babad9b2b0dcf47c6a2c29d504e4c7a8",
+)
+
+maven_jar(
+    name = "slf4j-log4j12",
+    artifact = "org.slf4j:slf4j-log4j12:1.7.30",
+    sha1 = "6edffc576ce104ec769d954618764f39f0f0f10d",
 )
 
 maven_jar(

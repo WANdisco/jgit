@@ -28,6 +28,9 @@ import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevTag;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.ReceiveCommand;
+import org.eclipse.jgit.util.ReplicationConfiguration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -35,6 +38,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.locks.Lock;
@@ -48,6 +52,7 @@ import static org.eclipse.jgit.transport.ReceiveCommand.Result.NOT_ATTEMPTED;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.OK;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_MISSING_OBJECT;
 import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_NONFASTFORWARD;
+import static org.eclipse.jgit.transport.ReceiveCommand.Result.REJECTED_OTHER_REASON;
 import static org.eclipse.jgit.transport.ReceiveCommand.Type.DELETE;
 import static org.eclipse.jgit.transport.ReceiveCommand.Type.UPDATE_NONFASTFORWARD;
 
@@ -55,8 +60,17 @@ import static org.eclipse.jgit.transport.ReceiveCommand.Type.UPDATE_NONFASTFORWA
  * {@link org.eclipse.jgit.lib.BatchRefUpdate} for Reftable based RefDatabase.
  */
 public abstract class ReftableBatchRefUpdate extends BatchRefUpdate {
+	private final static Logger logger = LoggerFactory
+			.getLogger(ReftableBatchRefUpdate.class);
 	private final Lock lock;
 
+	// Worth pointing out to any diligent coder reading this, that getRefDatabase which points at the base
+	// class variable refdb, is not linked to refDb in the way you might think it is... Worth looking at to
+	// clarify the inheritance structure in your own head.
+	// 1. This class (ReftableBatchRefUpdate) has variable named ref(large)Db
+	// 2. Base class (BatchRefUpdate) has variable named ref(small)db.
+	// 3. FileReftableDatabase is NOT a ReftableDatabase. It is a RefDatabase.
+	// 4. FileReftableDatabase HAS a ReftableDatabase.
 	private final ReftableDatabase refDb;
 
 	private final Repository repository;
@@ -83,6 +97,7 @@ public abstract class ReftableBatchRefUpdate extends BatchRefUpdate {
 
 	@Override
 	public void execute(RevWalk rw, ProgressMonitor pm, List<String> options) {
+
 		List<ReceiveCommand> pending = getPending();
 		if (pending.isEmpty()) {
 			return;
@@ -91,6 +106,21 @@ public abstract class ReftableBatchRefUpdate extends BatchRefUpdate {
 			setPushOptions(options);
 		}
 		try {
+			Optional<String> replicatedKey = Optional.ofNullable(ReplicationConfiguration
+					.getRepositoryCoreConfigKey("replicated", repository));
+
+			// For reftables, we are only allowing local updates to be applied. We are not supporting replication at this time.
+			// We only perform a local update if replicatedKey is null or explicitly false.
+			// The replicatedKey will not be set in vanilla gerrit repos.
+			if (replicatedKey.isPresent() && Boolean.parseBoolean(replicatedKey.get())) {
+				// replicated = true has been set, and there has been an attempt to work with a reftable based repository.
+				// Report and error and set REJECTED_OTHER_REASON.
+				final String errMsg = "Reftable replication is currently not supported";
+				pending.get(0).setResult(REJECTED_OTHER_REASON, errMsg);
+				logger.error("{}. .git/config value of replicated = {}", errMsg, replicatedKey);
+				return;
+			}
+
 			if (!checkObjectExistence(rw, pending)) {
 				return;
 			}
@@ -101,7 +131,6 @@ public abstract class ReftableBatchRefUpdate extends BatchRefUpdate {
 			if (!checkNonFastForwards(rw, pending)) {
 				return;
 			}
-			pending = getPending();
 
 			lock.lock();
 			try {
@@ -128,7 +157,7 @@ public abstract class ReftableBatchRefUpdate extends BatchRefUpdate {
 			} finally {
 				lock.unlock();
 			}
-		} catch (IOException e) {
+		} catch(IOException e){
 			pending.get(0).setResult(LOCK_FAILURE, "io error"); //$NON-NLS-1$
 			ReceiveCommand.abort(pending);
 		}

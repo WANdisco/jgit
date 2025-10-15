@@ -81,6 +81,10 @@ class PackFileSnapshot extends FileSnapshot {
 		return wasChecksumChanged;
 	}
 
+	public Object getFileKey() {
+		return fileKey;
+	}
+
 	@SuppressWarnings("nls")
 	@Override
 	public String toString() {

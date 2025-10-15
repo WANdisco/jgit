@@ -75,7 +75,7 @@ public class SubmoduleValidator {
 	 */
 	public static void assertValidSubmoduleName(String name)
 			throws SubmoduleValidationException {
-		if (name.contains("/../") || name.contains("\\..\\") //$NON-NLS-1$ //$NON-NLS-2$
+		if (name.equals("..") || name.contains("/../") || name.contains("\\..\\") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				|| name.startsWith("../") || name.startsWith("..\\") //$NON-NLS-1$ //$NON-NLS-2$
 				|| name.endsWith("/..") || name.endsWith("\\..")) { //$NON-NLS-1$ //$NON-NLS-2$
 			// Submodule names are used to store the submodule repositories

@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.locks.Lock;
@@ -54,6 +55,9 @@ import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.util.FileUtils;
 import org.eclipse.jgit.util.RefList;
 import org.eclipse.jgit.util.RefMap;
+import org.eclipse.jgit.util.ReplicationConfiguration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Implements RefDatabase using reftable for storage.
@@ -61,6 +65,9 @@ import org.eclipse.jgit.util.RefMap;
  * This class is threadsafe.
  */
 public class FileReftableDatabase extends RefDatabase {
+
+	private final static Logger logger = LoggerFactory
+			.getLogger(FileReftableDatabase.class);
 	private final ReftableDatabase reftableDatabase;
 
 	private final FileRepository fileRepository;
@@ -196,6 +203,12 @@ public class FileReftableDatabase extends RefDatabase {
 		}
 		return recreate(ref, doPeel(oldLeaf), hasVersioning());
 
+	}
+
+	@Override
+	public void refreshAndReload() throws IOException {
+		reftableDatabase.clearCache();
+		reftableStack.reload();
 	}
 
 	private Ref doPeel(Ref leaf) throws IOException {
@@ -380,7 +393,21 @@ public class FileReftableDatabase extends RefDatabase {
 		public Result update(RevWalk walk) throws IOException {
 			try {
 				rw = walk;
-				return super.update(walk);
+				Optional<String> replicatedKey = Optional.ofNullable(ReplicationConfiguration
+						.getRepositoryCoreConfigKey("replicated", this.getRepository()));
+
+				// If replicated = true, then report error and return REJECTED.
+				if (replicatedKey.isPresent() && Boolean.parseBoolean(replicatedKey.get())) {
+					logger.error("Reftable replication is not currently supported. " +
+							".git/config value of replicated = {}", replicatedKey);
+					// replicated = true is set, in which case
+					// we should send a REJECTED_OTHER_REASON result.
+					return Result.REJECTED_OTHER_REASON;
+
+				}
+
+				return unreplicatedUpdate(rw);
+
 			} finally {
 				rw = null;
 			}

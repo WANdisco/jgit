@@ -21,6 +21,9 @@ java_library(
     deps = [
         ":insecure_cipher_factory",
         "//lib:commons-codec",
+        "//lib:commons-lang",
+        "//lib:gerrit-gitms-shared",
+        "//lib:guava",
         "//lib:javaewah",
         "//lib:slf4j-api",
     ],

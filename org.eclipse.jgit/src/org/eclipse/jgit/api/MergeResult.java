@@ -259,7 +259,7 @@ public class MergeResult {
 	public MergeResult(ObjectId newHead, ObjectId base,
 			ObjectId[] mergedCommits, MergeStatus mergeStatus,
 			MergeStrategy mergeStrategy,
-			Map<String, org.eclipse.jgit.merge.MergeResult<?>> lowLevelResults) {
+			Map<String, org.eclipse.jgit.merge.MergeResult<? extends org.eclipse.jgit.diff.Sequence>> lowLevelResults) {
 		this(newHead, base, mergedCommits, mergeStatus, mergeStrategy,
 				lowLevelResults, null);
 	}
@@ -288,7 +288,7 @@ public class MergeResult {
 	public MergeResult(ObjectId newHead, ObjectId base,
 			ObjectId[] mergedCommits, MergeStatus mergeStatus,
 			MergeStrategy mergeStrategy,
-			Map<String, org.eclipse.jgit.merge.MergeResult<?>> lowLevelResults,
+			Map<String, org.eclipse.jgit.merge.MergeResult<? extends org.eclipse.jgit.diff.Sequence>> lowLevelResults,
 			String description) {
 		this(newHead, base, mergedCommits, mergeStatus, mergeStrategy,
 				lowLevelResults, null, description);
@@ -321,7 +321,7 @@ public class MergeResult {
 	public MergeResult(ObjectId newHead, ObjectId base,
 			ObjectId[] mergedCommits, MergeStatus mergeStatus,
 			MergeStrategy mergeStrategy,
-			Map<String, org.eclipse.jgit.merge.MergeResult<?>> lowLevelResults,
+			Map<String, org.eclipse.jgit.merge.MergeResult<? extends org.eclipse.jgit.diff.Sequence>> lowLevelResults,
 			Map<String, MergeFailureReason> failingPaths, String description) {
 		this.newHead = newHead;
 		this.mergedCommits = mergedCommits;
@@ -331,7 +331,7 @@ public class MergeResult {
 		this.description = description;
 		this.failingPaths = failingPaths;
 		if (lowLevelResults != null)
-			for (Map.Entry<String, org.eclipse.jgit.merge.MergeResult<?>> result : lowLevelResults
+			for (Map.Entry<String, org.eclipse.jgit.merge.MergeResult<? extends org.eclipse.jgit.diff.Sequence>> result : lowLevelResults
 					.entrySet())
 				addConflict(result.getKey(), result.getValue());
 	}
@@ -436,7 +436,7 @@ public class MergeResult {
 	 * @param lowLevelResult
 	 *            a {@link org.eclipse.jgit.merge.MergeResult}
 	 */
-	public void addConflict(String path, org.eclipse.jgit.merge.MergeResult<?> lowLevelResult) {
+	public void addConflict(String path, org.eclipse.jgit.merge.MergeResult<? extends org.eclipse.jgit.diff.Sequence> lowLevelResult) {
 		if (!lowLevelResult.containsConflicts())
 			return;
 		if (conflicts == null)

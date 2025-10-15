@@ -18,7 +18,7 @@
   <groupId>org.eclipse.jgit</groupId>
   <artifactId>org.eclipse.jgit-parent</artifactId>
   <packaging>pom</packaging>
-  <version>6.10.1-SNAPSHOT</version>
+  <version>6.10.1-WDv2</version>
 
   <name>JGit - Parent</name>
   <url>${jgit-url}</url>
@@ -135,11 +135,15 @@
     <httpclient-version>4.5.14</httpclient-version>
     <httpcore-version>4.4.16</httpcore-version>
     <slf4j-version>1.7.36</slf4j-version>
+    <log4j-version>2.17.1</log4j-version>
+    <!-- Used by WANdisco DependencyManagement module -->
+    <gerrit-gitms-shared-version>4.0.0.1</gerrit-gitms-shared-version>
     <maven-javadoc-plugin-version>3.6.3</maven-javadoc-plugin-version>
+    <tycho-extras-version>1.7.0</tycho-extras-version>
     <gson-version>2.11.0</gson-version>
     <bouncycastle-version>1.78.1</bouncycastle-version>
     <spotbugs-maven-plugin-version>4.8.5.0</spotbugs-maven-plugin-version>
-    <maven-project-info-reports-plugin-version>3.5.1</maven-project-info-reports-plugin-version>
+    <maven-project-info-reports-plugin-version>3.5.0</maven-project-info-reports-plugin-version>
     <maven-jxr-plugin-version>3.3.2</maven-jxr-plugin-version>
     <maven-surefire-plugin-version>3.2.5</maven-surefire-plugin-version>
     <maven-surefire-report-plugin-version>${maven-surefire-plugin-version}</maven-surefire-report-plugin-version>
@@ -150,17 +154,41 @@
     <jna-version>5.14.0</jna-version>
     <byte-buddy-version>1.14.16</byte-buddy-version>
 
+    <!-- Dependency Management-->
+    <skipDependencyManagement>true</skipDependencyManagement>
+    <!-- Release Notes Enforcement -->
+    <skipReleaseNotesEnforcement>true</skipReleaseNotesEnforcement>
+    <!-- Security checking -->
+    <skipSecurityCheck>true</skipSecurityCheck>
+
+    <!-- hamcrest-core convergence - junit requesting 1.3 / hamcrest-library requesting 1.4-atlassian-1 -->
+    <skipConvergenceEnforcement>true</skipConvergenceEnforcement>
+    <skipTestDependencyEnforcement>false</skipTestDependencyEnforcement>
+
+    <!-- as wd-enforcer is used as a dependency of a plugin and in plugin management, define a common property
+    to control its version info -->
+    <com.wandisco.wd-enforcer.version>2.0.0.1</com.wandisco.wd-enforcer.version>
+
     <!-- Properties to enable jacoco code coverage analysis -->
     <sonar.core.codeCoveragePlugin>jacoco</sonar.core.codeCoveragePlugin>
     <sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
     <sonar.jacoco.reportPath>${project.build.directory}/jacoco.exec</sonar.jacoco.reportPath>
 
     <!-- license check -->
-    <dash.fail>true</dash.fail>
+    <dash.fail>false</dash.fail>
     <dash.projectId>technology.jgit</dash.projectId>
+
+    <!-- Adding the option to skip eclipse dash as it's prone to getting
+         Http 524 from CloudFlare hosting the notices. -->
+    <skipEclipseLicenseCheck>true</skipEclipseLicenseCheck>
   </properties>
 
   <repositories>
+    <repository>
+      <id>wd_central</id>
+      <name>WANDisco - central repository</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
+    </repository>
     <repository>
       <id>jgit-repository</id>
       <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
@@ -168,6 +196,11 @@
   </repositories>
 
   <pluginRepositories>
+    <pluginRepository>
+      <id>wd_central_plugins</id>
+      <name>WANdisco central plugins</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
+    </pluginRepository>
     <pluginRepository>
       <id>repo.eclipse.org.cbi-releases</id>
       <url>https://repo.eclipse.org/content/repositories/cbi-releases/</url>
@@ -232,7 +265,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-source-plugin</artifactId>
-          <version>3.3.1</version>
+          <version>3.2.1</version>
         </plugin>
 
         <plugin>
@@ -365,6 +398,11 @@
           <version>1.1.0</version>
         </plugin>
         <plugin>
+          <groupId>org.owasp</groupId>
+          <artifactId>dependency-check-maven</artifactId>
+          <version>6.1.1</version>
+        </plugin>
+        <plugin>
           <groupId>org.cyclonedx</groupId>
           <artifactId>cyclonedx-maven-plugin</artifactId>
           <version>2.8.0</version>
@@ -383,10 +421,33 @@
           <artifactId>maven-enforcer-plugin</artifactId>
           <version>3.4.1</version>
         </plugin>
+        <plugin>
+          <groupId>com.wandisco</groupId>
+          <artifactId>wd-enforcer-rules</artifactId>
+          <version>${com.wandisco.wd-enforcer.version}</version>
+        </plugin>
       </plugins>
     </pluginManagement>
 
     <plugins>
+      <!-- OWASP Dependency Check for security vulnerabilities. -->
+      <!-- can be run separately by cmd 'mvn dependency-check:check' -->
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <configuration>
+          <skip>${skipSecurityCheck}</skip>
+          <skipSystemScope>true</skipSystemScope>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
@@ -399,7 +460,8 @@
             <configuration>
               <rules>
                 <requireMavenVersion>
-                  <version>3.6.3</version>
+                  <!-- Cirata note: Exact maven version check -->
+                  <version>[3.8.8]</version>
                 </requireMavenVersion>
               </rules>
             </configuration>
@@ -582,6 +644,9 @@
       <plugin>
         <groupId>org.eclipse.dash</groupId>
         <artifactId>license-tool-plugin</artifactId>
+        <configuration>
+          <skip>${skipEclipseLicenseCheck}</skip>
+        </configuration>
         <executions>
           <execution>
             <id>license-check</id>
@@ -841,6 +906,23 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- Note we do not include this as a runtime dependency, it is only here to compile against its interface.
+           really we should split gerrit.gitms.shared into an interface jar and an implementation.  Until then make sure
+           scope is always provided.  To get a bugfix in the implementation included, you change gerrit/gitms project.
+           NB Changes to this version, should also be replicated in the WORKSPACE file in the root directory for bazel builds.
+           Update  _GERRIT_GITMS_VERSION = "1.1.0.1-TC11-SNAPSHOT" -->
+      <dependency>
+        <groupId>com.wandisco</groupId>
+        <artifactId>gerrit-gitms-shared</artifactId>
+        <version>${gerrit-gitms-shared-version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>33.2.1-jre</version>
+      </dependency>
+      
       <dependency>
         <groupId>com.jcraft</groupId>
         <artifactId>jsch</artifactId>
@@ -896,9 +978,15 @@
       </dependency>
 
       <dependency>
-        <groupId>org.apache.commons</groupId>
+        <groupId>commons-io</groupId>
         <artifactId>commons-io</artifactId>
         <version>2.16.1</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-lang3</artifactId>
+        <version>3.14.0</version>
       </dependency>
 
       <dependency>
@@ -1020,26 +1108,33 @@
     </dependencies>
   </dependencyManagement>
 
+  <!-- WANdisco: Override distribution management to deploy to our internal artifactory
+       server. As it's also a Gerrit asset we deploy both snapshots and releases to
+       staging repository. -->
   <distributionManagement>
-    <repository>
-      <id>repo.eclipse.org</id>
-      <name>JGit Maven Repository - Releases</name>
-      <url>https://repo.eclipse.org/content/repositories/jgit-releases/</url>
-    </repository>
     <snapshotRepository>
-      <id>repo.eclipse.org</id>
-      <name>JGit Maven Repository - Snapshots</name>
-      <url>https://repo.eclipse.org/content/repositories/jgit-snapshots/</url>
-      <uniqueVersion>true</uniqueVersion>
+      <id>snapshots</id>
+      <name>WANdisco snapshots repository</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
     </snapshotRepository>
-    <site>
-      <id>jgit.website</id>
-      <name>JGit Website</name>
-      <url>${jgit.website.url}</url>
-    </site>
+    <repository>
+      <id>artifacts</id>
+      <name>WANdisco staging assets</name>
+      <url>https://nexus.wandisco.com/repository/wd_releases</url>
+    </repository>
   </distributionManagement>
 
   <profiles>
+    <profile>
+      <id>fast-assembly</id>
+      <properties>
+        <maven.test.skip>true</maven.test.skip>
+        <skipSecurityCheck>true</skipSecurityCheck>
+        <skipDependencyManagement>true</skipDependencyManagement>
+        <skipReleaseNotesEnforcement>true</skipReleaseNotesEnforcement>
+      </properties>
+    </profile>
+
     <profile>
       <id>javac</id>
       <build>
@@ -1080,6 +1175,13 @@
       <id>ecj</id>
       <activation>
         <activeByDefault>true</activeByDefault>
+        <!-- Ensure that this compiler profile is still active even if our release property is
+             set so that we don't lose the compiler configuration when activating release checks.
+             -->
+        <property>
+          <name>release</name>
+          <value>true</value>
+        </property>
       </activation>
       <build>
         <plugins>
@@ -1158,9 +1260,119 @@
         <jgit.website.url>file:///home/data/httpd/download.eclipse.org/jgit/site/${project.version}/</jgit.website.url>
       </properties>
     </profile>
+    <profile>
+      <id>wd-enforcer-check</id>
+      <activation>
+        <property>
+          <name>release</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <!-- Enforce important build rules -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>enforce-maven-version</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <!-- Fail on release build only - usually it only warns (in default execution above). -->
+                  <fail>true</fail>
+                  <rules>
+                    <requireMavenVersion>
+                      <version>[3.8.8]</version>
+                    </requireMavenVersion>
+                  </rules>
+                </configuration>
+              </execution>
+              <execution>
+                <id>enforcer-rules-warning</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <fail>true</fail>
+                  <skip>${skipConvergenceEnforcement}</skip>
+                  <rules>
+                    <DependencyConvergenceWd
+                            implementation="com.wandisco.enforcer.rules.DependencyConvergenceWd">
+                      <skipTestDependencyEnforcement>${skipTestDependencyEnforcement}
+                      </skipTestDependencyEnforcement>
+                    </DependencyConvergenceWd>
+                  </rules>
+                </configuration>
+              </execution>
+              <execution>
+                <id>enforce-versions</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <requireJavaVersion>
+                      <version>${java.version}</version>
+                    </requireJavaVersion>
+                  </rules>
+                </configuration>
+              </execution>
+
+              <execution>
+                <id>enforce-release-type-build</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <requireReleaseDeps>
+                      <message>No Snapshot Dependencies Allowed (release build)!</message>
+                    </requireReleaseDeps>
+                    <requireReleaseVersion>
+                      <message>Snapshot Project Version not Allowed (release build)!</message>
+                    </requireReleaseVersion>
+                    <!-- lets make up a rule that enforces release plugins also -->
+                    <requirePluginVersions>
+                      <message>Best Practice is to always use released plugin versions, if you
+                        need to allow a snapshot plugin in a release, use/define an
+                        unCheckedPluginList!
+                      </message>
+                      <!-- using default behaviour which doesn't allow the term SNAPSHOT, RELEASE or LATEST in the version info -->
+                      <banLatest>true</banLatest>
+                      <!-- <banRelease>true</banRelease>-->
+                      <!-- <banSnapshots>true</banSnapshots>-->
+                      <phases>validate</phases>
+                      <additionalPlugins>
+                        <additionalPlugin>com.wandisco:wd-enforcer-rules</additionalPlugin>
+                      </additionalPlugins>
+                      <unCheckedPluginList>
+                        org.apache.maven.plugins:maven-enforcer-plugin,org.apache.maven.plugins:maven-surefire-plugin
+                      </unCheckedPluginList>
+                    </requirePluginVersions>
+                  </rules>
+                  <fail>true</fail>
+                </configuration>
+              </execution>
+            </executions>
+            <dependencies>
+              <dependency>
+                <groupId>com.wandisco</groupId>
+                <artifactId>wd-enforcer-rules</artifactId>
+                <version>${com.wandisco.wd-enforcer.version}</version>
+              </dependency>
+            </dependencies>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 
   <modules>
+    <module>dependency-management</module>
+    <module>release-notes</module>
     <module>org.eclipse.jgit</module>
     <module>org.eclipse.jgit.ant</module>
     <module>org.eclipse.jgit.archive</module>
