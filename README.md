@@ -4,4 +4,8 @@ To download the appropriate release, please visit the [GitHub releases](../../re
 
 N.B
 Default "master" branch is only an empty placeholder.
+<br>
 
+## Archived
+This repository has now been made readonly, all further releases, will be made at: 
+[BlueOptima JGit](https://www.github.com/blueoptimaltd/jgit)
